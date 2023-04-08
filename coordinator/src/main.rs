@@ -1,7 +1,19 @@
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::fs::File;
 use tokio::net::{TcpListener};
-use std::str;
+use std::{str, fs};
+use serde_derive::{Deserialize, Serialize};
+
+#[derive(Deserialize, Serialize, Debug)]
+struct Provider {
+    ip_addr: String,
+    btc_addr: String,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+struct Providers {
+    providers: Vec<Provider>
+}
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -32,17 +44,23 @@ async fn main() -> io::Result<()> {
 
             let (mut reader, _) = socket.split();
             
-            loop {
-                match reader.read(&mut buf).await{
-                    Ok(0) => return,
-                    Ok(_n) =>{
-                            //f.write_all(&mut buf).await.unwrap();
-                            let s = String::from_utf8_lossy(&buf);
-                            println!("{}", s);
-                        },
-                    Err(e) => println!("{}",e)
-                    };
-                }  
+            
+            match reader.read(&mut buf).await{
+                Ok(0) => return,
+                Ok(_n) =>{
+                        //f.write_all(&mut buf).await.unwrap();
+                        let s = String::from_utf8_lossy(&buf);
+                        println!("{}", s);
+                        let parts: Vec<&str> = s.split_ascii_whitespace().collect();
+                        let ip_addr = parts[0];
+                        let btc_addr = parts[1];
+                        
+                        serde_json::from_str::<Providers>(&ip_addr).unwrap();
+                    },
+                Err(e) => println!("{}",e)
+            };
+
+                
         });
     }
 }
