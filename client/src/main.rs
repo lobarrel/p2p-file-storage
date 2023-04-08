@@ -14,6 +14,7 @@ use crossterm::{
     style::Stylize,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
+use local_ip_address::local_ip;
 
 #[tokio::main]
 async fn main(){
@@ -62,15 +63,15 @@ async fn main(){
     }
 
     // restore terminal
-    execute!(terminal.backend_mut(),LeaveAlternateScreen).unwrap();
-    terminal.show_cursor().unwrap();
+    //execute!(terminal.backend_mut(),LeaveAlternateScreen).unwrap();
+    //terminal.show_cursor().unwrap();
     
 }
 
 async fn signup_as_provider() -> io::Result<()>{
     let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
-    let ip_addr = "128.7.2.1";
-    let btc_addr = "hgy7dwta83gd837v87";
+    let ip_addr = local_ip().unwrap();
+    let btc_addr = "tb1qkkgjylluap72wnhz6rf5adxvhpd3wa6u6e0sus";
     let message = ip_addr.to_string() + " " + btc_addr;
     println!("{}", message);
 
