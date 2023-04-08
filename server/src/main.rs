@@ -1,8 +1,6 @@
-use std::io::BufWriter;
-
-use tokio::io::{self, AsyncReadExt, AsyncWriteExt, BufReader, AsyncBufReadExt};
+use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::fs::File;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener};
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -29,22 +27,17 @@ async fn main() -> io::Result<()> {
             let mut f = File::create("./output.txt").await.unwrap();
             let mut buf = [0u8; 1];
 
-            let (mut reader, mut writer) = socket.split();
+            let (mut reader, _) = socket.split();
             
             loop {
                 match reader.read(&mut buf).await{
                     Ok(0) => return,
-                    Ok(n) =>{
-                            println!("GOT {:?}", &buf[..n]);
+                    Ok(_n) =>{
                             f.write_all(&mut buf).await.unwrap();
                         },
-                    Err(e) => println!("Error")
+                    Err(e) => println!("{}",e)
                     };
-                }
-
-            
-            
-            
+                }  
         });
     }
 }
