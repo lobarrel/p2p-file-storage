@@ -1,6 +1,6 @@
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::fs::File;
-use tokio::net::{TcpStream};
+use tokio::net::{TcpStream, TcpListener};
 use std::{
     io as std_io
 };
@@ -40,7 +40,7 @@ async fn main(){
                         println!("balance");
                     }
                     if let KeyCode::Char('u') = key.code {
-                        println!("upload");
+                        upload_file().await.unwrap();
                     }
                     if let KeyCode::Char('d') = key.code {
                         println!("download");
@@ -53,7 +53,7 @@ async fn main(){
             //connect_to_server().await.unwrap();
         }
         if let KeyCode::Char('2') = key.code {
-            println!("Server");
+            start_server().await.unwrap();
         }
         if let KeyCode::Char('q') = key.code {
             return;
@@ -68,7 +68,7 @@ async fn main(){
 
 
 
-async fn connect_to_server() -> io::Result<()>{
+async fn upload_file() -> io::Result<()>{
     let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
 
     let mut f = File::open("./data.txt").await?;
@@ -82,4 +82,32 @@ async fn connect_to_server() -> io::Result<()>{
 
 
     Ok(())
+}
+
+async fn start_server() -> io::Result<()>{
+    let listener = TcpListener::bind("localhost:8080").await.unwrap();
+
+    loop{
+        let (mut socket, _) = listener.accept().await.unwrap();
+        
+        
+        tokio::spawn(async move{
+            println!("Connection opened");
+           
+            let mut f = File::create("./output.txt").await.unwrap();
+            let mut buf = [0u8; 1];
+
+            let (mut reader, _) = socket.split();
+            
+            loop {
+                match reader.read(&mut buf).await{
+                    Ok(0) => return,
+                    Ok(_n) =>{
+                            f.write_all(&mut buf).await.unwrap();
+                        },
+                    Err(e) => println!("{}",e)
+                    };
+                }  
+        });
+    }
 }
