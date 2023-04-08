@@ -53,7 +53,8 @@ async fn main(){
             //connect_to_server().await.unwrap();
         }
         if let KeyCode::Char('2') = key.code {
-            start_server().await.unwrap();
+            //start_server().await.unwrap();
+            signup_as_provider().await.unwrap();
         }
         if let KeyCode::Char('q') = key.code {
             return;
@@ -66,7 +67,16 @@ async fn main(){
     
 }
 
+async fn signup_as_provider() -> io::Result<()>{
+    let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
+    let ip_addr = "128.7.2.1";
+    let btc_addr = "hgy7dwta83gd837v87";
+    let message = ip_addr.to_string() + " " + btc_addr;
+    println!("{}", message);
 
+    stream.write(message.as_bytes()).await?;
+    Ok(())
+}
 
 async fn upload_file() -> io::Result<()>{
     let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
@@ -85,18 +95,17 @@ async fn upload_file() -> io::Result<()>{
 }
 
 async fn start_server() -> io::Result<()>{
+
     let listener = TcpListener::bind("localhost:8080").await.unwrap();
 
     loop{
         let (mut socket, _) = listener.accept().await.unwrap();
-        
         
         tokio::spawn(async move{
             println!("Connection opened");
            
             let mut f = File::create("./output.txt").await.unwrap();
             let mut buf = [0u8; 1];
-
             let (mut reader, _) = socket.split();
             
             loop {
