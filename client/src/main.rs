@@ -28,7 +28,29 @@ async fn main(){
 
     if let Event::Key(key) = event::read().unwrap(){
         if let KeyCode::Char('1') = key.code {
-            connect_to_server().await.unwrap();
+            println!("Creating your Bitcoin wallet...");
+            println!("{}", format!("Wallet successfully created!").green());
+            println!("\nCommands:\na: show your Bitcoin address\nb: show your wallet balance\nu: upload a new file\nd: download a file\nq: quit");
+            loop{
+                if let Event::Key(key) = event::read().unwrap(){
+                    if let KeyCode::Char('a') = key.code {
+                        println!("address");
+                    }
+                    if let KeyCode::Char('b') = key.code {
+                        println!("balance");
+                    }
+                    if let KeyCode::Char('u') = key.code {
+                        println!("upload");
+                    }
+                    if let KeyCode::Char('d') = key.code {
+                        println!("download");
+                    }
+                    if let KeyCode::Char('q') = key.code {
+                        return;
+                    }
+                }
+            }
+            //connect_to_server().await.unwrap();
         }
         if let KeyCode::Char('2') = key.code {
             println!("Server");
