@@ -2,18 +2,13 @@ use tokio::io::{self, AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::fs::File;
 use tokio::net::{TcpListener};
 use std::{str, fs};
-use std::io::{BufWriter as std_writer, Write};
+use std::sync::{Arc, Mutex};
 use serde_derive::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug)]
 struct Provider {
     ip_addr: String,
     btc_addr: String,
-}
-
-#[derive(Deserialize, Serialize, Debug)]
-struct Providers {
-    providers: Vec<Provider>
 }
 
 #[tokio::main]
@@ -31,13 +26,14 @@ async fn main() -> io::Result<()> {
 
 
     let listener = TcpListener::bind("localhost:8080").await.unwrap();
+    let db = Arc::new(Mutex::new(Vec::<Provider>::new()));
     //let mut f = File::create("./providers.json").await.unwrap();
     
 
     loop{
         let (mut socket, _) = listener.accept().await.unwrap();
         
-        
+        let db = db.clone();
         tokio::spawn(async move{
             println!("Connection opened");
            
@@ -55,7 +51,10 @@ async fn main() -> io::Result<()> {
                         println!("{}", s);
                         let parts: Vec<&str> = s.split_ascii_whitespace().collect();
                         let provider = Provider{ip_addr: parts[0].to_string(), btc_addr: parts[1].to_string()};
-                        let serialized = serde_json::to_string(&provider).unwrap();
+                        let lock = db.lock().unwrap();
+                        lock.push(provider);
+                        drop(lock);
+                        let serialized = serde_json::to_string(&lock).unwrap();
                         println!("{}", serialized);
                         //let mut f = File::open("./providers.json").await.unwrap();
                         //serde_json::to_writer_pretty(&fs::File::open("./providers.json"), value)
