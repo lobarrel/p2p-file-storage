@@ -71,7 +71,7 @@ async fn main(){
 async fn signup_as_provider() -> io::Result<()>{
     let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
     let ip_addr = local_ip().unwrap();
-    let btc_addr = "tb1qkkgjylluap72wnhz6rf5adxvhpd3wa6u6e0sus";
+    let btc_addr = "tb1qkkgjylluap72wnhz6rf5adxvhpd3wa6u6e0coc";
     let message = ip_addr.to_string() + " " + btc_addr;
     println!("{}", message);
 
