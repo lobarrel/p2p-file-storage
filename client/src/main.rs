@@ -79,6 +79,11 @@ async fn signup_as_provider() -> io::Result<()>{
     Ok(())
 }
 
+async fn ask_coordinator(){
+    let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
+    
+}
+
 async fn upload_file() -> io::Result<()>{
     let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
 
