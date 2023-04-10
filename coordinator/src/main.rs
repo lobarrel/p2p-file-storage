@@ -35,21 +35,28 @@ async fn main() -> io::Result<()> {
                 Ok(_n) =>{
                         let message = String::from_utf8_lossy(&buf);
                         let parts: Vec<&str> = message.split_ascii_whitespace().collect();
-                        let provider = Provider{
-                            ip_addr: parts[0].to_string(), 
-                            btc_addr: parts[1].to_string()
-                        };
+                        //ADD PROVIDER TO JSON
+                        if parts[0].eq("p"){
+                            let provider = Provider{
+                                ip_addr: parts[1].to_string(), 
+                                btc_addr: parts[2].to_string()
+                            };
+    
+                            let mut db = db.lock().unwrap();
+                            db.providers.push(provider);
+                            let serialized = serde_json::to_string_pretty(&db.providers).unwrap();
+                            drop(db);
+                        
+                            std::fs::write("./providers.json", serialized).unwrap(); 
+                        }
+                        //SEND PROVIDER FROM JSON
+                        else{
 
-                        let mut db = db.lock().unwrap();
-                        db.providers.push(provider);
-                        let serialized = serde_json::to_string_pretty(&db.providers).unwrap();
-                        drop(db);
-                    
-                        std::fs::write("./providers.json", serialized).unwrap(); 
+                        }
+                        
                     },
                 Err(e) => println!("{}",e)
             };    
         });
     }
 }
-
