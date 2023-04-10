@@ -27,7 +27,7 @@ async fn main() -> io::Result<()> {
 
         tokio::spawn(async move{
             println!("Connection opened");
-            let mut buf = [0u8; 54];
+            let mut buf = [0u8; 56];
             let (mut reader, _) = socket.split();
             
             match reader.read(&mut buf).await{
@@ -52,3 +52,4 @@ async fn main() -> io::Result<()> {
         });
     }
 }
+

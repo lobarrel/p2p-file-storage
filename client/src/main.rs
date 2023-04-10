@@ -16,6 +16,11 @@ use crossterm::{
 };
 use local_ip_address::local_ip;
 
+struct Provider{
+    ip_addr: String,
+    btc_addr: String
+}
+
 #[tokio::main]
 async fn main(){
 
@@ -70,19 +75,40 @@ async fn main(){
 
 async fn signup_as_provider() -> io::Result<()>{
     let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
-    let ip_addr = local_ip().unwrap();
-    let btc_addr = "tb1qkkgjylluap72wnhz6rf5adxvhpd3wa6u6e0coc";
-    let message = ip_addr.to_string() + " " + btc_addr;
+    let ip_addr = local_ip().unwrap().to_string();
+    let btc_addr = "tb1qkkgjylluap72wnhz6rf5adxvhpd3wa6u6e0coc".to_string();
+    let message = "p ".to_string() + &ip_addr + " " + &btc_addr;
     println!("{}", message);
 
     stream.write(message.as_bytes()).await?;
     Ok(())
 }
 
-async fn ask_coordinator(){
+async fn ask_coordinator() -> Result<Provider, ()>{
     let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
+    let message = "c".to_string();
+    stream.write(message.as_bytes()).await.unwrap();
+
+    let listener = TcpListener::bind("localhost:8080").await.unwrap();
+    let (mut socket, _) = listener.accept().await.unwrap();
+    let mut buf = [0u8; 54];
     
-}
+    let result = match socket.read(&mut buf).await{
+        Ok(0) => Err(()),
+        Ok(_n) =>{
+            let message = String::from_utf8_lossy(&buf);
+            let parts: Vec<&str> = message.split_ascii_whitespace().collect();
+            let provider = Provider{
+                ip_addr: parts[0].to_string(),
+                btc_addr: parts[1].to_string()
+            };
+            Ok(provider)
+            },
+        Err(e) => Err(println!("{}", e))
+    };
+    return result;
+}  
+
 
 async fn upload_file() -> io::Result<()>{
     let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
