@@ -40,8 +40,7 @@ async fn main(){
             loop{
                 if let Event::Key(key) = event::read().unwrap(){
                     if let KeyCode::Char('a') = key.code {
-                        //println!("address");
-                        ask_coordinator().await.unwrap();
+                        println!("address");
                     }
                     if let KeyCode::Char('b') = key.code {
                         println!("balance");
@@ -91,8 +90,7 @@ async fn signup_as_provider() -> io::Result<()>{
 
 
 
-async fn ask_coordinator() -> Result<Provider, ()>{
-    let mut socket = TcpStream::connect("127.0.0.1:8080").await.unwrap();
+async fn ask_coordinator(socket: &mut TcpStream) -> Result<Provider, ()>{
     let (mut rd, mut wr) = socket.split();
 
     let message = "c".to_string();
@@ -110,7 +108,7 @@ async fn ask_coordinator() -> Result<Provider, ()>{
                 ip_addr: parts[0].to_string(),
                 btc_addr: parts[1].to_string()
             };
-            println!("RESULT: {} {}", provider.ip_addr, provider.btc_addr);
+            
             Ok(provider)
             },
         Err(e) => Err(println!("{}", e))
@@ -124,7 +122,9 @@ async fn ask_coordinator() -> Result<Provider, ()>{
 
 async fn upload_file() -> io::Result<()>{
     let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
-
+    let result = ask_coordinator(&mut stream).await.unwrap();
+    println!("RESULT: {} {}", result.ip_addr, result.btc_addr);
+    
     let mut f = File::open("./data.txt").await?;
     let mut buffer = Vec::new();
 
