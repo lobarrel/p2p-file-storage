@@ -40,7 +40,8 @@ async fn main(){
             loop{
                 if let Event::Key(key) = event::read().unwrap(){
                     if let KeyCode::Char('a') = key.code {
-                        println!("address");
+                        //println!("address");
+                        ask_coordinator().await.unwrap();
                     }
                     if let KeyCode::Char('b') = key.code {
                         println!("balance");
@@ -85,15 +86,16 @@ async fn signup_as_provider() -> io::Result<()>{
 }
 
 async fn ask_coordinator() -> Result<Provider, ()>{
-    let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
-    let message = "c".to_string();
-    stream.write(message.as_bytes()).await.unwrap();
+    let mut socket = TcpStream::connect("127.0.0.1:8080").await.unwrap();
+    let (mut rd, mut wr) = socket.split();
+    let ip_addr = local_ip().unwrap().to_string();
+    let message = "c ".to_string() + &ip_addr;
+    wr.write(message.as_bytes()).await.unwrap();
 
-    let listener = TcpListener::bind("localhost:8080").await.unwrap();
-    let (mut socket, _) = listener.accept().await.unwrap();
+
     let mut buf = [0u8; 54];
     
-    let result = match socket.read(&mut buf).await{
+    let result = match rd.read(&mut buf).await{
         Ok(0) => Err(()),
         Ok(_n) =>{
             let message = String::from_utf8_lossy(&buf);
@@ -102,6 +104,7 @@ async fn ask_coordinator() -> Result<Provider, ()>{
                 ip_addr: parts[0].to_string(),
                 btc_addr: parts[1].to_string()
             };
+            println!("RESULT: {} {}", provider.ip_addr, provider.btc_addr);
             Ok(provider)
             },
         Err(e) => Err(println!("{}", e))
@@ -121,7 +124,6 @@ async fn upload_file() -> io::Result<()>{
     println!("{:?}", buffer);
 
     stream.write_all(&mut buffer).await?;
-
 
     Ok(())
 }
