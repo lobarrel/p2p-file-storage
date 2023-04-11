@@ -1,18 +1,6 @@
 [
   {
-    "ip_addr": "172.20.10.1",
-    "btc_addr": "tb1qkkgjylluap72wnhz6rf5adxvhpd3wa6u6e0co1"
-  },
-  {
-    "ip_addr": "172.20.10.2",
-    "btc_addr": "tb1qkkgjylluap72wnhz6rf5adxvhpd3wa6u6e0co2"
-  },
-  {
-    "ip_addr": "172.20.10.3",
-    "btc_addr": "tb1qkkgjylluap72wnhz6rf5adxvhpd3wa6u6e0co3"
-  },
-  {
-    "ip_addr": "172.20.10.4",
-    "btc_addr": "tb1qkkgjylluap72wnhz6rf5adxvhpd3wa6u6e0co4"
+    "ip_addr": "172.20.10.8",
+    "btc_addr": "tb1qkkgjylluap72wnhz6rf5adxvhpd3wa6u6e0coc"
   }
 ]

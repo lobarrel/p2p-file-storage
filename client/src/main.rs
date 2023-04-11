@@ -74,6 +74,9 @@ async fn main(){
     
 }
 
+
+
+
 async fn signup_as_provider() -> io::Result<()>{
     let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
     let ip_addr = local_ip().unwrap().to_string();
@@ -85,11 +88,14 @@ async fn signup_as_provider() -> io::Result<()>{
     Ok(())
 }
 
+
+
+
 async fn ask_coordinator() -> Result<Provider, ()>{
     let mut socket = TcpStream::connect("127.0.0.1:8080").await.unwrap();
     let (mut rd, mut wr) = socket.split();
-    let ip_addr = local_ip().unwrap().to_string();
-    let message = "c ".to_string() + &ip_addr;
+
+    let message = "c".to_string();
     wr.write(message.as_bytes()).await.unwrap();
 
 
@@ -113,6 +119,9 @@ async fn ask_coordinator() -> Result<Provider, ()>{
 }  
 
 
+
+
+
 async fn upload_file() -> io::Result<()>{
     let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
 
@@ -127,6 +136,9 @@ async fn upload_file() -> io::Result<()>{
 
     Ok(())
 }
+
+
+
 
 async fn start_server() -> io::Result<()>{
 
