@@ -1,8 +1,9 @@
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::fs::File;
 use tokio::net::{TcpStream, TcpListener};
+use std::path::Path;
 use std::{
-    io as std_io
+    io as std_io, fs
 };
 use tui::{
     backend::{CrosstermBackend},
@@ -15,11 +16,25 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
 use local_ip_address::local_ip;
+use serde_derive::{Deserialize, Serialize};
 
 struct Provider{
     ip_addr: String,
     btc_addr: String
 }
+
+#[derive(Deserialize, Serialize, Debug)]
+struct FileInfo{
+    hash: String,
+    name: String,
+    ip_provider: String
+}
+#[derive(Deserialize, Serialize, Debug)]
+struct StoredFile{
+    hash: String,
+    content: String
+}
+
 
 #[tokio::main]
 async fn main(){
@@ -59,8 +74,8 @@ async fn main(){
             //connect_to_server().await.unwrap();
         }
         if let KeyCode::Char('2') = key.code {
-            //start_server().await.unwrap();
             signup_as_provider().await.unwrap();
+            start_server().await.unwrap();
         }
         if let KeyCode::Char('q') = key.code {
             return;
@@ -121,18 +136,45 @@ async fn ask_coordinator(socket: &mut TcpStream) -> Result<Provider, ()>{
 
 
 async fn upload_file() -> io::Result<()>{
-    let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
-    let result = ask_coordinator(&mut stream).await.unwrap();
-    println!("RESULT: {} {}", result.ip_addr, result.btc_addr);
+    let mut socket = TcpStream::connect("127.0.0.1:8080").await.unwrap();
+    let provider = ask_coordinator(&mut socket).await.unwrap();
+    println!("RESULT: {} {}", provider.ip_addr, provider.btc_addr);
+
+    let mut socket = TcpStream::connect(&provider.ip_addr).await.unwrap();
+    let (mut rd, mut wr) = socket.split();
+
+    let path = Path::new("./file.txt");
+    let filename = path.file_name().unwrap().to_str().unwrap();
     
-    let mut f = File::open("./data.txt").await?;
+    let mut f = File::open(path).await?;
+    let file_size = fs::metadata(path).unwrap().len();
+    //TODO: encrypt file
     let mut buffer = Vec::new();
 
-    // read the whole file
-    f.read_to_end(&mut buffer).await?;
-    println!("{:?}", buffer);
+    let message = "u ".to_string() + &file_size.to_string();
+    wr.write(message.as_bytes()).await.unwrap();
 
-    stream.write_all(&mut buffer).await?;
+    let result = match rd.read(&mut buffer).await{
+        Ok(0) => Err(()),
+        Ok(_n) =>{
+            f.read_to_end(&mut buffer).await?;
+            wr.write_all(&mut buffer).await?;
+            Ok(())
+        },
+        Err(e) => Err(println!("{}", e))
+    };
+
+    let text = std::fs::read_to_string("./my_files.json").unwrap();
+    let mut my_files = Vec::<FileInfo>::new();
+    my_files = serde_json::from_str::<Vec<FileInfo>>(&text).unwrap();
+    let new_file = FileInfo{
+        hash: "hash".to_string(),
+        name: filename.to_string(),
+        ip_provider: provider.ip_addr
+    };
+    my_files.push(new_file);
+    let serialized = serde_json::to_string_pretty(&my_files).unwrap();
+    std::fs::write("./my_files.json", serialized).unwrap(); 
 
     Ok(())
 }
