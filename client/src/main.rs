@@ -144,7 +144,6 @@ async fn ask_coordinator() -> Result<Provider, ()>{
 
 
 async fn upload_file() -> io::Result<()>{
-<<<<<<< HEAD
     let mut socket = TcpStream::connect("127.0.0.1:8080").await.unwrap();
     let provider = ask_coordinator(&mut socket).await.unwrap();
     println!("RESULT: {} {}", provider.ip_addr, provider.btc_addr);
@@ -156,11 +155,6 @@ async fn upload_file() -> io::Result<()>{
     let filename = path.file_name().unwrap().to_str().unwrap();
     
     let mut f = File::open(path).await?;
-=======
-    let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
-
-    let mut f = File::open("./data.txt").await?;
->>>>>>> parent of 9ad986d (added ask_coordinator into upload_file)
     let mut buffer = Vec::new();
     // let file_size = fs::metadata(path).unwrap().len();
     // //TODO: encrypt file
