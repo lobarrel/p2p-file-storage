@@ -44,6 +44,9 @@ version = "0.1.0"
 dependencies = [
  "crossterm",
  "local-ip-address",
+ "serde",
+ "serde_derive",
+ "serde_json",
  "tokio",
  "tui",
 ]
