@@ -60,8 +60,7 @@ async fn main(){
             loop{
                 if let Event::Key(key) = event::read().unwrap(){
                     if let KeyCode::Char('a') = key.code {
-                        //println!("address");
-                        ask_coordinator().await.unwrap();
+                        println!("address");
                     }
                     if let KeyCode::Char('b') = key.code {
                         println!("balance");
@@ -112,8 +111,8 @@ async fn signup_as_provider() -> io::Result<()>{
 
 
 
-async fn ask_coordinator() -> Result<Provider, ()>{
-    let mut socket = TcpStream::connect("127.0.0.1:8080").await.unwrap();
+async fn ask_coordinator(socket: &mut TcpStream) -> Result<Provider, ()>{
+    //let mut socket = TcpStream::connect("127.0.0.1:8080").await.unwrap();
     let (mut rd, mut wr) = socket.split();
 
     let message = "c".to_string();
