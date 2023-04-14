@@ -2,6 +2,7 @@ use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::fs::File;
 use tokio::net::{TcpStream, TcpListener};
 use std::path::Path;
+use std::sync::{Arc, Mutex as std_mutex, MutexGuard};
 use std::{
     io as std_io, fs
 };
@@ -33,6 +34,10 @@ struct FileInfo{
 struct StoredFile{
     hash: String,
     content: String
+}
+
+struct StoredFiles{
+    stored_files: Vec<StoredFile>
 }
 
 
@@ -75,6 +80,7 @@ async fn main(){
         }
         if let KeyCode::Char('2') = key.code {
             signup_as_provider().await.unwrap();
+            
             start_server().await.unwrap();
         }
         if let KeyCode::Char('q') = key.code {
@@ -147,22 +153,26 @@ async fn upload_file() -> io::Result<()>{
     let filename = path.file_name().unwrap().to_str().unwrap();
     
     let mut f = File::open(path).await?;
-    let file_size = fs::metadata(path).unwrap().len();
-    //TODO: encrypt file
     let mut buffer = Vec::new();
+    // let file_size = fs::metadata(path).unwrap().len();
+    // //TODO: encrypt file
+    
 
-    let message = "u ".to_string() + &file_size.to_string();
-    wr.write(message.as_bytes()).await.unwrap();
+    // let message = "u ".to_string() + &file_size.to_string();
+    // wr.write(message.as_bytes()).await.unwrap();
 
-    let result = match rd.read(&mut buffer).await{
-        Ok(0) => Err(()),
-        Ok(_n) =>{
-            f.read_to_end(&mut buffer).await?;
-            wr.write_all(&mut buffer).await?;
-            Ok(())
-        },
-        Err(e) => Err(println!("{}", e))
-    };
+    // let result = match rd.read(&mut buffer).await{
+    //     Ok(0) => Err(()),
+    //     Ok(_n) =>{
+    //         f.read_to_end(&mut buffer).await?;
+    //         wr.write_all(&mut buffer).await?;
+    //         Ok(())
+    //     },
+    //     Err(e) => Err(println!("{}", e))
+    // };
+
+    f.read_to_end(&mut buffer).await?;
+    wr.write_all(&mut buffer).await?;
 
     let text = std::fs::read_to_string("./my_files.json").unwrap();
     let mut my_files = Vec::<FileInfo>::new();
@@ -185,26 +195,41 @@ async fn upload_file() -> io::Result<()>{
 async fn start_server() -> io::Result<()>{
 
     let listener = TcpListener::bind("localhost:8080").await.unwrap();
+    let db = Arc::new(std_mutex::new(StoredFiles{stored_files: Vec::new()}));
 
     loop{
         let (mut socket, _) = listener.accept().await.unwrap();
+        let db = db.clone();
         
         tokio::spawn(async move{
             println!("Connection opened");
            
-            let mut f = File::create("./output.txt").await.unwrap();
             let mut buf = [0u8; 1];
             let (mut reader, _) = socket.split();
             
+            let file_content = "".to_string();
             loop {
+                let mut file_content = file_content.clone();
                 match reader.read(&mut buf).await{
-                    Ok(0) => return,
+                    Ok(0) => break,
                     Ok(_n) =>{
-                            f.write_all(&mut buf).await.unwrap();
+                        let text = String::from_utf8(buf.to_vec()).unwrap();
+                        file_content.push_str(&text);
                         },
                     Err(e) => println!("{}",e)
-                    };
-                }  
+                };
+            }  
+
+            let new_file = StoredFile{
+                hash: "hash".to_string(),
+                content: file_content
+            };
+
+            let mut db = db.lock().unwrap();
+            db.stored_files.push(new_file);
+
+            let serialized = serde_json::to_string_pretty(&db.stored_files).unwrap();
+            std::fs::write("./stored_files.json", serialized).unwrap(); 
         });
     }
 }
