@@ -1,4 +1,5 @@
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
+use tokio::net::tcp::WriteHalf;
 use tokio::net::{TcpListener, TcpStream};
 use std::str;
 use std::sync::{Arc, Mutex as std_mutex, MutexGuard};
@@ -28,26 +29,33 @@ async fn main() -> io::Result<()> {
 
         tokio::spawn(async move{
             println!("Connection opened");
-            let mut buf = [0u8; 56];
             
-            match socket.read(&mut buf).await{
-                Ok(0) => return,
-                Ok(_n) =>{
-                        let message = String::from_utf8_lossy(&buf);
-                        let parts: Vec<&str> = message.split_ascii_whitespace().collect();
+            let (mut rd, mut wr) = socket.split();
+            
+            let mut buf = [0u8; 1];
+            
+   
+            let n = rd.read(&mut buf).await.unwrap();
+            if n == 0 {
+                println!("Errore in lettura");
+            }
+            let bytes = &buf[..n];
+            let message = str::from_utf8(bytes).unwrap();
+            println!("{}",message);
+            println!("dio cane");
+            let parts: Vec<&str> = message.split_ascii_whitespace().collect();
 
-                        //ADD PROVIDER TO JSON
-                        if parts[0].eq("p"){
-                            let db = db.lock().unwrap();
-                            add_provider(parts, db);
-                        }
-                        //SEND PROVIDER FROM JSON
-                        else{
-                            send_provider_to_client(socket).await;
-                        }
-                    },
-                Err(e) => println!("{}",e)
-            };    
+            //ADD PROVIDER TO JSON
+            if parts[0].eq("p"){
+                let db = db.lock().unwrap();
+                add_provider(parts, db);
+            }
+            //SEND PROVIDER FROM JSON
+            else{
+                send_provider_to_client(wr).await;
+            }
+
+            
         });
     }
 }
@@ -67,12 +75,14 @@ fn add_provider(parts: Vec<&str>, mut db: MutexGuard<Providers>){
 }
 
 
-async fn send_provider_to_client(mut socket: TcpStream){
+async fn send_provider_to_client(mut socket: WriteHalf<'_>){
+    println!("ci sto");
     let text = std::fs::read_to_string("./providers.json").unwrap();
     let providers = serde_json::from_str::<Vec<Provider>>(&text).unwrap();
     let n = rand::thread_rng().gen_range(0..providers.len());
     let provider = providers.get(n).unwrap();
     
     let message = provider.ip_addr.to_string() + " " + &provider.btc_addr;
+    println!("{}",message);
     socket.write_all(message.as_bytes()).await.unwrap();
 }

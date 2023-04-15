@@ -4,7 +4,7 @@ use tokio::net::{TcpStream, TcpListener};
 use std::path::Path;
 use std::sync::{Arc, Mutex as std_mutex, MutexGuard};
 use std::{
-    io as std_io, fs
+    io as std_io, str
 };
 use tui::{
     backend::{CrosstermBackend},
@@ -116,27 +116,28 @@ async fn ask_coordinator(socket: &mut TcpStream) -> Result<Provider, ()>{
     //let mut socket = TcpStream::connect("127.0.0.1:8080").await.unwrap();
     let (mut rd, mut wr) = socket.split();
 
-    let message = "c".to_string();
+    let message = "c ".to_string();
     wr.write(message.as_bytes()).await.unwrap();
 
-
-    let mut buf = [0u8; 54];
+    let mut buf = [0u8; 1];
+            
+   
+    let n = rd.read(&mut buf).await.unwrap();
+    if n == 0 {
+        println!("Errore in lettura");
+    }
+    let bytes = &buf[..n];
+    let message = str::from_utf8(bytes).unwrap();
+    println!("{}",message);
     
-    let result = match rd.read(&mut buf).await{
-        Ok(0) => Err(()),
-        Ok(_n) =>{
-            let message = String::from_utf8_lossy(&buf);
-            let parts: Vec<&str> = message.split_ascii_whitespace().collect();
-            let provider = Provider{
-                ip_addr: parts[0].to_string(),
-                btc_addr: parts[1].to_string()
-            };
-            println!("RESULT: {} {}", provider.ip_addr, provider.btc_addr);
-            Ok(provider)
-            },
-        Err(e) => Err(println!("{}", e))
+    
+    let parts: Vec<&str> = message.split_ascii_whitespace().collect();
+    let provider = Provider{
+        ip_addr: parts[0].to_string(),
+        btc_addr: parts[1].to_string()
     };
-    return result;
+    println!("RESULT: {} {}", provider.ip_addr, provider.btc_addr);
+    Ok(provider)
 }  
 
 
