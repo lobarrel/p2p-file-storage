@@ -98,7 +98,7 @@ async fn main(){
 
 
 async fn signup_as_provider() -> io::Result<()>{
-    let mut stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
+    let mut stream = TcpStream::connect("localhost:8080").await.unwrap();
     let ip_addr = local_ip().unwrap().to_string();
     let btc_addr = "tb1qkkgjylluap72wnhz6rf5adxvhpd3wa6u6e0coc".to_string();
     let message = "p ".to_string() + &ip_addr + " " + &btc_addr;
@@ -143,11 +143,11 @@ async fn ask_coordinator(socket: &mut TcpStream) -> Result<Provider, ()>{
 
 
 async fn upload_file() -> io::Result<()>{
-    let mut socket = TcpStream::connect("127.0.0.1:8080").await.unwrap();
+    let mut socket = TcpStream::connect("localhost:8080").await.unwrap();
     let provider = ask_coordinator(&mut socket).await.unwrap();
     println!("RESULT: {} {}", provider.ip_addr, provider.btc_addr);
-
-    let mut socket = TcpStream::connect(&provider.ip_addr).await.unwrap();
+    //let ip_prov = provider.ip_addr + ":8081";
+    let mut socket = TcpStream::connect("localhost:8081").await.unwrap();
     let (mut rd, mut wr) = socket.split();
 
     let path = Path::new("./file.txt");
@@ -175,15 +175,21 @@ async fn upload_file() -> io::Result<()>{
     f.read_to_end(&mut buffer).await?;
     wr.write_all(&mut buffer).await?;
 
+    
     let text = std::fs::read_to_string("./my_files.json").unwrap();
+    
     let mut my_files = Vec::<FileInfo>::new();
-    my_files = serde_json::from_str::<Vec<FileInfo>>(&text).unwrap();
+    if !text.is_empty(){
+        my_files = serde_json::from_str::<Vec<FileInfo>>(&text).unwrap();
+    }
+ 
     let new_file = FileInfo{
         hash: "hash".to_string(),
         name: filename.to_string(),
         ip_provider: provider.ip_addr
     };
     my_files.push(new_file);
+    println!("{:?}", my_files);
     let serialized = serde_json::to_string_pretty(&my_files).unwrap();
     std::fs::write("./my_files.json", serialized).unwrap(); 
 
@@ -195,7 +201,7 @@ async fn upload_file() -> io::Result<()>{
 
 async fn start_server() -> io::Result<()>{
 
-    let listener = TcpListener::bind("localhost:8080").await.unwrap();
+    let listener = TcpListener::bind("localhost:8081").await.unwrap();
     let db = Arc::new(std_mutex::new(StoredFiles{stored_files: Vec::new()}));
 
     loop{
@@ -208,9 +214,9 @@ async fn start_server() -> io::Result<()>{
             let mut buf = [0u8; 1];
             let (mut reader, _) = socket.split();
             
-            let file_content = "".to_string();
+            let mut file_content = "".to_string();
             loop {
-                let mut file_content = file_content.clone();
+                //let mut file_content = file_content.clone();
                 match reader.read(&mut buf).await{
                     Ok(0) => break,
                     Ok(_n) =>{
