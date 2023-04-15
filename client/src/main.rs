@@ -40,6 +40,7 @@ struct StoredFiles{
     stored_files: Vec<StoredFile>
 }
 
+const COORDINATOR_IP: &str = "localhost:8080";
 
 #[tokio::main]
 async fn main(){
@@ -98,7 +99,7 @@ async fn main(){
 
 
 async fn signup_as_provider() -> io::Result<()>{
-    let mut stream = TcpStream::connect("localhost:8080").await.unwrap();
+    let mut stream = TcpStream::connect(COORDINATOR_IP).await.unwrap();
     let ip_addr = local_ip().unwrap().to_string();
     let btc_addr = "tb1qkkgjylluap72wnhz6rf5adxvhpd3wa6u6e0coc".to_string();
     let message = "p ".to_string() + &ip_addr + " " + &btc_addr;
@@ -143,11 +144,11 @@ async fn ask_coordinator(socket: &mut TcpStream) -> Result<Provider, ()>{
 
 
 async fn upload_file() -> io::Result<()>{
-    let mut socket = TcpStream::connect("localhost:8080").await.unwrap();
+    let mut socket = TcpStream::connect(COORDINATOR_IP).await.unwrap();
     let provider = ask_coordinator(&mut socket).await.unwrap();
     println!("RESULT: {} {}", provider.ip_addr, provider.btc_addr);
-    //let ip_prov = provider.ip_addr + ":8081";
-    let mut socket = TcpStream::connect("localhost:8081").await.unwrap();
+    let ip_prov = provider.ip_addr + ":8080";
+    let mut socket = TcpStream::connect(&ip_prov).await.unwrap();
     let (mut rd, mut wr) = socket.split();
 
     let path = Path::new("./file.txt");
@@ -186,7 +187,7 @@ async fn upload_file() -> io::Result<()>{
     let new_file = FileInfo{
         hash: "hash".to_string(),
         name: filename.to_string(),
-        ip_provider: provider.ip_addr
+        ip_provider: ip_prov
     };
     my_files.push(new_file);
     println!("{:?}", my_files);
@@ -200,8 +201,8 @@ async fn upload_file() -> io::Result<()>{
 
 
 async fn start_server() -> io::Result<()>{
-
-    let listener = TcpListener::bind("localhost:8081").await.unwrap();
+    let ip_addr = local_ip().unwrap().to_string() + ":8080";
+    let listener = TcpListener::bind(ip_addr).await.unwrap();
     let db = Arc::new(std_mutex::new(StoredFiles{stored_files: Vec::new()}));
 
     loop{
