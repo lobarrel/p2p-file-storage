@@ -42,6 +42,7 @@ struct StoredFiles{
     stored_files: Vec<StoredFile>
 }
 
+
 const COORDINATOR_IP: &str = "localhost:8080";
 const MAX_PROVIDER_ID: u16 = 65535;
 
@@ -116,11 +117,11 @@ async fn signup_as_provider() -> io::Result<()>{
 
 
 
-async fn ask_coordinator(socket: &mut TcpStream) -> Result<Provider, ()>{
+async fn ask_coordinator(socket: &mut TcpStream, provider_id: String) -> Result<Provider, ()>{
     //let mut socket = TcpStream::connect("127.0.0.1:8080").await.unwrap();
     let (mut rd, mut wr) = socket.split();
 
-    let message = "c".to_string();
+    let message = "c ".to_string() + &provider_id;
     wr.write(message.as_bytes()).await.unwrap();
 
     let mut buf = [0u8; 64];
@@ -149,7 +150,7 @@ async fn ask_coordinator(socket: &mut TcpStream) -> Result<Provider, ()>{
 
 async fn upload_file() -> io::Result<()>{
     let mut socket = TcpStream::connect(COORDINATOR_IP).await.unwrap();
-    let provider = ask_coordinator(&mut socket).await.unwrap();
+    let provider = ask_coordinator(&mut socket, "n".to_string()).await.unwrap();
     println!("RESULT: {} {} {}", provider.id, provider.ip_addr, provider.btc_addr);
 
 
@@ -159,6 +160,7 @@ async fn upload_file() -> io::Result<()>{
 
     let path = Path::new("./file.txt");
     let filename = path.file_name().unwrap().to_str().unwrap();
+    //TODO: check name not already existing
     
     let mut f = File::open(path).await?;
     let mut buffer = Vec::new();
@@ -204,7 +206,18 @@ async fn upload_file() -> io::Result<()>{
 }
 
 
+async fn download_file(filename: String){
+    let text = std::fs::read_to_string("./my_files.json").unwrap();
+    let mut my_files = Vec::<FileInfo>::new();
+    if !text.is_empty(){
+        my_files = serde_json::from_str::<Vec<FileInfo>>(&text).unwrap();
+    }
 
+    if my_files.iter().any(|elem| elem.name.eq(&filename)){
+        let mut socket = TcpStream::connect(COORDINATOR_IP).await.unwrap();
+
+    }
+}
 
 async fn run_provider() -> io::Result<()>{
     let ip_addr = local_ip().unwrap().to_string() + ":8080";

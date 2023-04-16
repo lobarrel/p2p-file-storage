@@ -1,7 +1,8 @@
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::WriteHalf;
 use tokio::net::{TcpListener};
-use std::str;
+use tokio::time::error::Elapsed;
+use std::str::{self, FromStr};
 use std::sync::{Arc, Mutex as std_mutex, MutexGuard};
 use serde_derive::{Deserialize, Serialize};
 use rand::prelude::*;
@@ -51,7 +52,7 @@ async fn main() -> io::Result<()> {
             }
             //SEND PROVIDER TO CLIENT
             else{
-                send_provider_to_client(wr).await;
+                send_provider_to_client(wr, parts[1].to_string()).await;
             }
 
             
@@ -75,11 +76,19 @@ fn add_provider(parts: Vec<&str>, mut db: MutexGuard<Providers>){
 }
 
 
-async fn send_provider_to_client(mut socket: WriteHalf<'_>){
+async fn send_provider_to_client(mut socket: WriteHalf<'_>, provider_id: String){
     let text = std::fs::read_to_string("./providers.json").unwrap();
     let providers = serde_json::from_str::<Vec<Provider>>(&text).unwrap();
-    let n = rand::thread_rng().gen_range(0..providers.len());
-    let provider = providers.get(n).unwrap();
+
+    
+
+    let provider = if provider_id.eq("n") {
+        let n = rand::thread_rng().gen_range(0..providers.len());
+        providers.get(n).unwrap()
+    }else{
+        let n = providers.iter().position(|elem| elem.id.eq(&provider_id)).unwrap();
+        providers.get(n).unwrap()
+    };
     
     let message = provider.id.to_string() + " " + &provider.ip_addr + " " + &provider.btc_addr;
     println!("{}",message);
