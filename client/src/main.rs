@@ -82,7 +82,7 @@ async fn main(){
         if let KeyCode::Char('2') = key.code {
             signup_as_provider().await.unwrap();
             
-            start_server().await.unwrap();
+            run_provider().await.unwrap();
         }
         if let KeyCode::Char('q') = key.code {
             return;
@@ -116,10 +116,10 @@ async fn ask_coordinator(socket: &mut TcpStream) -> Result<Provider, ()>{
     //let mut socket = TcpStream::connect("127.0.0.1:8080").await.unwrap();
     let (mut rd, mut wr) = socket.split();
 
-    let message = "c ".to_string();
+    let message = "c".to_string();
     wr.write(message.as_bytes()).await.unwrap();
 
-    let mut buf = [0u8; 1];
+    let mut buf = [0u8; 64];
             
    
     let n = rd.read(&mut buf).await.unwrap();
@@ -136,7 +136,7 @@ async fn ask_coordinator(socket: &mut TcpStream) -> Result<Provider, ()>{
         ip_addr: parts[0].to_string(),
         btc_addr: parts[1].to_string()
     };
-    println!("RESULT: {} {}", provider.ip_addr, provider.btc_addr);
+    
     Ok(provider)
 }  
 
@@ -148,6 +148,8 @@ async fn upload_file() -> io::Result<()>{
     let mut socket = TcpStream::connect(COORDINATOR_IP).await.unwrap();
     let provider = ask_coordinator(&mut socket).await.unwrap();
     println!("RESULT: {} {}", provider.ip_addr, provider.btc_addr);
+
+
     let ip_prov = provider.ip_addr + ":8080";
     let mut socket = TcpStream::connect(&ip_prov).await.unwrap();
     let (mut rd, mut wr) = socket.split();
@@ -201,7 +203,7 @@ async fn upload_file() -> io::Result<()>{
 
 
 
-async fn start_server() -> io::Result<()>{
+async fn run_provider() -> io::Result<()>{
     let ip_addr = local_ip().unwrap().to_string() + ":8080";
     let listener = TcpListener::bind(ip_addr).await.unwrap();
     let db = Arc::new(std_mutex::new(StoredFiles{stored_files: Vec::new()}));

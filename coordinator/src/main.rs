@@ -32,8 +32,8 @@ async fn main() -> io::Result<()> {
             
             let (mut rd, mut wr) = socket.split();
             
-            let mut buf = [0u8; 1];
-            
+            let mut buf = [0u8; 64];
+
    
             let n = rd.read(&mut buf).await.unwrap();
             if n == 0 {
@@ -42,7 +42,6 @@ async fn main() -> io::Result<()> {
             let bytes = &buf[..n];
             let message = str::from_utf8(bytes).unwrap();
             println!("{}",message);
-            println!("dio cane");
             let parts: Vec<&str> = message.split_ascii_whitespace().collect();
 
             //ADD PROVIDER TO JSON
@@ -76,7 +75,6 @@ fn add_provider(parts: Vec<&str>, mut db: MutexGuard<Providers>){
 
 
 async fn send_provider_to_client(mut socket: WriteHalf<'_>){
-    println!("ci sto");
     let text = std::fs::read_to_string("./providers.json").unwrap();
     let providers = serde_json::from_str::<Vec<Provider>>(&text).unwrap();
     let n = rand::thread_rng().gen_range(0..providers.len());
