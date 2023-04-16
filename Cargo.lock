@@ -44,6 +44,7 @@ version = "0.1.0"
 dependencies = [
  "crossterm",
  "local-ip-address",
+ "rand",
  "serde",
  "serde_derive",
  "serde_json",

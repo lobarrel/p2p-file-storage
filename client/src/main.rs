@@ -17,9 +17,11 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
 use local_ip_address::local_ip;
+use rand::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 
 struct Provider{
+    id: String,
     ip_addr: String,
     btc_addr: String
 }
@@ -28,7 +30,7 @@ struct Provider{
 struct FileInfo{
     hash: String,
     name: String,
-    ip_provider: String
+    provider_id: String
 }
 #[derive(Deserialize, Serialize, Debug)]
 struct StoredFile{
@@ -41,6 +43,7 @@ struct StoredFiles{
 }
 
 const COORDINATOR_IP: &str = "localhost:8080";
+const MAX_PROVIDER_ID: u16 = 65535;
 
 #[tokio::main]
 async fn main(){
@@ -100,9 +103,10 @@ async fn main(){
 
 async fn signup_as_provider() -> io::Result<()>{
     let mut stream = TcpStream::connect(COORDINATOR_IP).await.unwrap();
+    let id = rand::thread_rng().gen_range(0..=MAX_PROVIDER_ID).to_string();
     let ip_addr = local_ip().unwrap().to_string();
     let btc_addr = "tb1qkkgjylluap72wnhz6rf5adxvhpd3wa6u6e0coc".to_string();
-    let message = "p ".to_string() + &ip_addr + " " + &btc_addr;
+    let message = "p ".to_string() + &id + " " + &ip_addr + " " + &btc_addr;
     println!("{}", message);
 
     stream.write(message.as_bytes()).await?;
@@ -128,13 +132,12 @@ async fn ask_coordinator(socket: &mut TcpStream) -> Result<Provider, ()>{
     }
     let bytes = &buf[..n];
     let message = str::from_utf8(bytes).unwrap();
-    println!("{}",message);
-    
     
     let parts: Vec<&str> = message.split_ascii_whitespace().collect();
     let provider = Provider{
-        ip_addr: parts[0].to_string(),
-        btc_addr: parts[1].to_string()
+        id: parts[0].to_string(),
+        ip_addr: parts[1].to_string(),
+        btc_addr: parts[2].to_string()
     };
     
     Ok(provider)
@@ -147,7 +150,7 @@ async fn ask_coordinator(socket: &mut TcpStream) -> Result<Provider, ()>{
 async fn upload_file() -> io::Result<()>{
     let mut socket = TcpStream::connect(COORDINATOR_IP).await.unwrap();
     let provider = ask_coordinator(&mut socket).await.unwrap();
-    println!("RESULT: {} {}", provider.ip_addr, provider.btc_addr);
+    println!("RESULT: {} {} {}", provider.id, provider.ip_addr, provider.btc_addr);
 
 
     let ip_prov = provider.ip_addr + ":8080";
@@ -190,7 +193,7 @@ async fn upload_file() -> io::Result<()>{
     let new_file = FileInfo{
         hash: "hash".to_string(),
         name: filename.to_string(),
-        ip_provider: ip_prov
+        provider_id: provider.id.to_string()
     };
     my_files.push(new_file);
     println!("{:?}", my_files);

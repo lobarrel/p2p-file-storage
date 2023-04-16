@@ -1,6 +1,6 @@
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::WriteHalf;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener};
 use std::str;
 use std::sync::{Arc, Mutex as std_mutex, MutexGuard};
 use serde_derive::{Deserialize, Serialize};
@@ -8,6 +8,7 @@ use rand::prelude::*;
 
 #[derive(Deserialize, Serialize, Debug)]
 struct Provider {
+    id: String,
     ip_addr: String,
     btc_addr: String,
 }
@@ -30,7 +31,7 @@ async fn main() -> io::Result<()> {
         tokio::spawn(async move{
             println!("Connection opened");
             
-            let (mut rd, mut wr) = socket.split();
+            let (mut rd, wr) = socket.split();
             
             let mut buf = [0u8; 64];
 
@@ -41,7 +42,6 @@ async fn main() -> io::Result<()> {
             }
             let bytes = &buf[..n];
             let message = str::from_utf8(bytes).unwrap();
-            println!("{}",message);
             let parts: Vec<&str> = message.split_ascii_whitespace().collect();
 
             //ADD PROVIDER TO JSON
@@ -49,7 +49,7 @@ async fn main() -> io::Result<()> {
                 let db = db.lock().unwrap();
                 add_provider(parts, db);
             }
-            //SEND PROVIDER FROM JSON
+            //SEND PROVIDER TO CLIENT
             else{
                 send_provider_to_client(wr).await;
             }
@@ -63,8 +63,9 @@ async fn main() -> io::Result<()> {
 
 fn add_provider(parts: Vec<&str>, mut db: MutexGuard<Providers>){
     let provider = Provider{
-        ip_addr: parts[1].to_string(), 
-        btc_addr: parts[2].to_string()
+        id: parts[1].to_string(),
+        ip_addr: parts[2].to_string(), 
+        btc_addr: parts[3].to_string()
     };
 
     db.providers.push(provider);
@@ -80,7 +81,7 @@ async fn send_provider_to_client(mut socket: WriteHalf<'_>){
     let n = rand::thread_rng().gen_range(0..providers.len());
     let provider = providers.get(n).unwrap();
     
-    let message = provider.ip_addr.to_string() + " " + &provider.btc_addr;
+    let message = provider.id.to_string() + " " + &provider.ip_addr + " " + &provider.btc_addr;
     println!("{}",message);
     socket.write_all(message.as_bytes()).await.unwrap();
 }
