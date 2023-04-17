@@ -214,10 +214,40 @@ async fn download_file(filename: String){
     }
 
     if my_files.iter().any(|elem| elem.name.eq(&filename)){
+        let n = my_files.iter().position(|elem| elem.name.eq(&filename)).unwrap();
+        let provider_id = my_files.get(n).unwrap().provider_id.as_str();
         let mut socket = TcpStream::connect(COORDINATOR_IP).await.unwrap();
+        let provider = ask_coordinator(&mut socket, provider_id.to_string()).await.unwrap();
+        println!("RESULT: {} {} {}", provider.id, provider.ip_addr, provider.btc_addr);
 
+        let ip_prov = provider.ip_addr + ":8080";
+        let mut socket = TcpStream::connect(&ip_prov).await.unwrap();
+        let (mut rd, mut wr) = socket.split();
+
+        let message = "d ".to_string() + " " + "hash";
+        wr.write(message.as_bytes()).await.unwrap();
+
+        let mut buf = [0u8; 1];
+        let mut file_content = "".to_string();
+                
+        loop{
+            match rd.read(&mut buf).await {
+                Ok(0) => break,
+                Ok(_n) => {
+                    let text = String::from_utf8(buf.to_vec()).unwrap();
+                    file_content.push_str(&text);
+                },
+                Err(e) => println!("{}", e)
+            }
+        }
+
+        let filepath = "./";
+        let mut file = File::create(filepath).await.unwrap();
+        file.write(file_content.as_bytes()).await.unwrap();
     }
 }
+
+
 
 async fn run_provider() -> io::Result<()>{
     let ip_addr = local_ip().unwrap().to_string() + ":8080";
@@ -230,33 +260,77 @@ async fn run_provider() -> io::Result<()>{
         
         tokio::spawn(async move{
             println!("Connection opened");
-           
-            let mut buf = [0u8; 1];
-            let (mut reader, _) = socket.split();
+            let (mut rd, mut wr) = socket.split();
+
+            let mut buf = [0u8; 64];
+            let n = rd.read(&mut buf).await.unwrap();
+            if n == 0 {
+                println!("Errore in lettura");
+            }
+            let bytes = &buf[..n];
+            let message = str::from_utf8(bytes).unwrap();
+            let parts: Vec<&str> = message.split_ascii_whitespace().collect();
+
+            if parts[0].eq("u"){
+
+                //TODO: check size
+                let mut buf = [0u8; 1];
             
-            let mut file_content = "".to_string();
-            loop {
-                //let mut file_content = file_content.clone();
-                match reader.read(&mut buf).await{
-                    Ok(0) => break,
-                    Ok(_n) =>{
-                        let text = String::from_utf8(buf.to_vec()).unwrap();
-                        file_content.push_str(&text);
-                        },
-                    Err(e) => println!("{}",e)
+                let mut file_content = "".to_string();
+                loop {
+                    //let mut file_content = file_content.clone();
+                    match rd.read(&mut buf).await{
+                        Ok(0) => break,
+                        Ok(_n) =>{
+                            let text = String::from_utf8(buf.to_vec()).unwrap();
+                            file_content.push_str(&text);
+                            },
+                        Err(e) => println!("{}",e)
+                    };
+                }  
+    
+                let new_file = StoredFile{
+                    hash: "hash".to_string(),
+                    content: file_content
                 };
-            }  
+    
+                let mut db = db.lock().unwrap();
+                db.stored_files.push(new_file);
+    
+                let serialized = serde_json::to_string_pretty(&db.stored_files).unwrap();
+                std::fs::write("./stored_files.json", serialized).unwrap(); 
+            }
 
-            let new_file = StoredFile{
-                hash: "hash".to_string(),
-                content: file_content
-            };
+            else {
+                let hash = parts[1].to_string();
+                let serialized = std::fs::read_to_string("./stored_files.json").unwrap();
+                let mut stored_files = Vec::<StoredFile>::new();
+                if !serialized.is_empty(){
+                    stored_files = serde_json::from_str::<Vec<StoredFile>>(&serialized).unwrap();
+                }
 
-            let mut db = db.lock().unwrap();
-            db.stored_files.push(new_file);
+                if stored_files.iter().any(|elem| elem.hash.eq(&hash)){
+                    let n = stored_files.iter().position(|elem| elem.hash.eq(&hash)).unwrap();
+                    let file = stored_files.remove(n);
 
-            let serialized = serde_json::to_string_pretty(&db.stored_files).unwrap();
-            std::fs::write("./stored_files.json", serialized).unwrap(); 
+                    wr.write_all(&mut file.content.as_bytes()).await.unwrap();
+                }
+
+            }
         });
     }
 }
+
+
+
+/*
+
+signup_as_provider:  client(P)    p [id][ip][btc]       coordinator -> save provider.json
+
+ask_coordinator:     client(U)    c [id]                coordinator -> return Provider
+
+upload_file:         client(U)    u [size][file]              client(P) -> save stored_files.json
+
+download_file:       client(U)    d [hash]              client(P) -> return file  
+
+ */
