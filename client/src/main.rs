@@ -74,7 +74,7 @@ async fn main(){
                         upload_file().await.unwrap();
                     }
                     if let KeyCode::Char('d') = key.code {
-                        println!("download");
+                        download_file("file.txt".to_string()).await;
                     }
                     if let KeyCode::Char('q') = key.code {
                         return;
@@ -240,8 +240,8 @@ async fn download_file(filename: String){
                 Err(e) => println!("{}", e)
             }
         }
-
-        let filepath = "./";
+    
+        let filepath = "/Users/lorenzobottelli/Desktop/".to_string() + &filename;
         let mut file = File::create(filepath).await.unwrap();
         file.write(file_content.as_bytes()).await.unwrap();
     }

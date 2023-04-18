@@ -2,6 +2,11 @@
   {
     "hash": "hash",
     "name": "file.txt",
-    "provider_id": "37753"
+    "provider_id": "25359"
+  },
+  {
+    "hash": "hash",
+    "name": "file.txt",
+    "provider_id": "25359"
   }
 ]
