@@ -20,6 +20,7 @@ use crossterm::{
 use local_ip_address::local_ip;
 use rand::{prelude::*, Error};
 use serde_derive::{Deserialize, Serialize};
+use sha256::digest;
 
 
 
@@ -135,8 +136,7 @@ async fn ask_coordinator(socket: &mut TcpStream, provider_id: String) -> Result<
     if n == 0 {
         println!("Errore in lettura");
     }
-    let bytes = &buf[..n];
-    let message = str::from_utf8(bytes).unwrap();
+    let message = str::from_utf8(&buf[..n]).unwrap();
     
     let parts: Vec<&str> = message.split_ascii_whitespace().collect();
     let provider = Provider{
@@ -168,29 +168,28 @@ async fn upload_file() -> io::Result<()>{
     //TODO: check name not already existing
     
     let mut f = File::open(path).await?;
-    let mut buffer = Vec::new();
+    let mut buf = [0u8; 64];
 
     let message = "u ".to_string() + &file_size.to_string();
     wr.write(message.as_bytes()).await.unwrap();
+
+    let n = rd.read(&mut buf).await.unwrap();
+    if n == 0{
+        println!("Errore in lettura");
+    }
+    else{
+        let message = str::from_utf8(&buf[..n]).unwrap();
+        println!("{}", message);
+    }
+   
     
     // //TODO: encrypt file
     
 
-    // let message = "u ".to_string() + &file_size.to_string();
-    // wr.write(message.as_bytes()).await.unwrap();
-
-    // let result = match rd.read(&mut buffer).await{
-    //     Ok(0) => Err(()),
-    //     Ok(_n) =>{
-    //         f.read_to_end(&mut buffer).await?;
-    //         wr.write_all(&mut buffer).await?;
-    //         Ok(())
-    //     },
-    //     Err(e) => Err(println!("{}", e))
-    // };
-
-    f.read_to_end(&mut buffer).await?;
-    wr.write_all(&mut buffer).await?;
+    let mut buf = Vec::new();
+    f.read_to_end(&mut buf).await?;
+    let hash = digest(buf.as_slice());
+    wr.write_all(&mut buf).await?;
 
     
     let text = std::fs::read_to_string("./my_files.json").unwrap();
@@ -201,7 +200,7 @@ async fn upload_file() -> io::Result<()>{
     }
  
     let new_file = FileInfo{
-        hash: "hash".to_string(),
+        hash: hash,
         name: filename.to_string(),
         provider_id: provider.id.to_string()
     };
@@ -223,20 +222,19 @@ async fn download_file(filename: String){
 
     if my_files.iter().any(|elem| elem.name.eq(&filename)){
         let n = my_files.iter().position(|elem| elem.name.eq(&filename)).unwrap();
-        let provider_id = my_files.remove(n).provider_id;
+        let file = my_files.remove(n);
         let serialized = serde_json::to_string_pretty(&my_files).unwrap();
-        println!("{:?}", my_files);
         std::fs::write("./my_files.json", serialized).unwrap(); 
         
         let mut socket = TcpStream::connect(COORDINATOR_IP).await.unwrap();
-        let provider = ask_coordinator(&mut socket, provider_id).await.unwrap();
+        let provider = ask_coordinator(&mut socket, file.provider_id).await.unwrap();
         println!("RESULT: {} {} {}", provider.id, provider.ip_addr, provider.btc_addr);
 
         let ip_prov = provider.ip_addr + ":8080";
         let mut socket = TcpStream::connect(&ip_prov).await.unwrap();
         let (mut rd, mut wr) = socket.split();
 
-        let message = "d ".to_string() + " " + "hash";
+        let message = "d ".to_string() + &file.hash;
         wr.write(message.as_bytes()).await.unwrap();
 
         let mut buf = [0u8; 1];
@@ -252,6 +250,15 @@ async fn download_file(filename: String){
                 Err(e) => println!("{}", e)
             }
         }
+
+        println!("{}",file.hash);
+        println!("{}",digest(file_content.as_str()));
+        if digest(file_content.as_str()).eq(&file.hash){
+            println!("download completed");
+        }else{
+            println!("file hash not correct");
+        }
+        
     
         let filepath = "/Users/lorenzobottelli/Desktop/".to_string() + &filename;
         let mut file = File::create(filepath).await.unwrap();
@@ -274,7 +281,7 @@ async fn run_provider() -> io::Result<()>{
             println!("Connection opened");
             let (mut rd, mut wr) = socket.split();
 
-            let mut buf = [0u8; 64];
+            let mut buf = [0u8; 128];
             let n = rd.read(&mut buf).await.unwrap();
             if n == 0 {
                 println!("Errore in lettura");
@@ -287,8 +294,9 @@ async fn run_provider() -> io::Result<()>{
             if parts[0].eq("u"){
                 //TODO check size
                 if parts[1].parse::<u64>().unwrap() > CAPACITY{
-                    return;
+                    wr.write("file exceeds storage capacity limit".as_bytes()).await.unwrap();
                 }else{
+                    wr.write("file uploaded".as_bytes()).await.unwrap();
                     let uploaded_file = read_uploaded_file(rd).await;
 
                     let mut db = db.lock().unwrap();
@@ -296,13 +304,14 @@ async fn run_provider() -> io::Result<()>{
 
                     let serialized = serde_json::to_string_pretty(&db.stored_files).unwrap();
                     std::fs::write("./stored_files.json", serialized).unwrap(); 
+                    
                 }
             }
 
             //DOWNLOAD
             else {
-                println!("download...");
                 let hash = parts[1].to_string();
+                println!("{}",hash);
                 
                 let downloaded_file: Result<StoredFile, String>;
                 {
@@ -319,10 +328,17 @@ async fn run_provider() -> io::Result<()>{
                     std::fs::write("./stored_files.json", serialized).unwrap(); 
                 }
 
-                wr.write_all(&mut downloaded_file.unwrap().content.as_bytes()).await.unwrap();
+                match downloaded_file{
+                    Ok(file) => wr.write_all(&mut file.content.as_bytes()).await.unwrap(),
+                    Err(e) => {
+                        wr.write(e.as_bytes()).await.unwrap();
+                    }
+                }
+                
             }
         });
     }
+    
 }
 
 
@@ -342,7 +358,7 @@ async fn read_uploaded_file(mut rd: ReadHalf<'_>) -> StoredFile{
      }  
 
      let new_file = StoredFile{
-         hash: "hash".to_string(),
+         hash: digest(file_content.as_str()),
          content: file_content
      };
      return new_file;
