@@ -1,10 +1,11 @@
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::fs::File;
+use tokio::net::tcp::{WriteHalf, ReadHalf};
 use tokio::net::{TcpStream, TcpListener};
 use std::path::Path;
 use std::sync::{Arc, Mutex as std_mutex, MutexGuard};
 use std::{
-    io as std_io, str
+    io as std_io, str, fs
 };
 use tui::{
     backend::{CrosstermBackend},
@@ -17,8 +18,10 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
 use local_ip_address::local_ip;
-use rand::prelude::*;
+use rand::{prelude::*, Error};
 use serde_derive::{Deserialize, Serialize};
+
+
 
 struct Provider{
     id: String,
@@ -45,6 +48,7 @@ struct StoredFiles{
 
 const COORDINATOR_IP: &str = "localhost:8080";
 const MAX_PROVIDER_ID: u16 = 65535;
+const CAPACITY: u64 = 128000000;    //in bytes
 
 #[tokio::main]
 async fn main(){
@@ -160,11 +164,15 @@ async fn upload_file() -> io::Result<()>{
 
     let path = Path::new("./file.txt");
     let filename = path.file_name().unwrap().to_str().unwrap();
+    let file_size = fs::metadata(path).unwrap().len();
     //TODO: check name not already existing
     
     let mut f = File::open(path).await?;
     let mut buffer = Vec::new();
-    // let file_size = fs::metadata(path).unwrap().len();
+
+    let message = "u ".to_string() + &file_size.to_string();
+    wr.write(message.as_bytes()).await.unwrap();
+    
     // //TODO: encrypt file
     
 
@@ -198,7 +206,7 @@ async fn upload_file() -> io::Result<()>{
         provider_id: provider.id.to_string()
     };
     my_files.push(new_file);
-    println!("{:?}", my_files);
+    
     let serialized = serde_json::to_string_pretty(&my_files).unwrap();
     std::fs::write("./my_files.json", serialized).unwrap(); 
 
@@ -215,9 +223,13 @@ async fn download_file(filename: String){
 
     if my_files.iter().any(|elem| elem.name.eq(&filename)){
         let n = my_files.iter().position(|elem| elem.name.eq(&filename)).unwrap();
-        let provider_id = my_files.get(n).unwrap().provider_id.as_str();
+        let provider_id = my_files.remove(n).provider_id;
+        let serialized = serde_json::to_string_pretty(&my_files).unwrap();
+        println!("{:?}", my_files);
+        std::fs::write("./my_files.json", serialized).unwrap(); 
+        
         let mut socket = TcpStream::connect(COORDINATOR_IP).await.unwrap();
-        let provider = ask_coordinator(&mut socket, provider_id.to_string()).await.unwrap();
+        let provider = ask_coordinator(&mut socket, provider_id).await.unwrap();
         println!("RESULT: {} {} {}", provider.id, provider.ip_addr, provider.btc_addr);
 
         let ip_prov = provider.ip_addr + ":8080";
@@ -256,7 +268,7 @@ async fn run_provider() -> io::Result<()>{
 
     loop{
         let (mut socket, _) = listener.accept().await.unwrap();
-        let db = db.clone();
+        let db: Arc<std_mutex<StoredFiles>> = db.clone();
         
         tokio::spawn(async move{
             println!("Connection opened");
@@ -271,57 +283,71 @@ async fn run_provider() -> io::Result<()>{
             let message = str::from_utf8(bytes).unwrap();
             let parts: Vec<&str> = message.split_ascii_whitespace().collect();
 
+            //UPLOAD
             if parts[0].eq("u"){
+                //TODO check size
+                if parts[1].parse::<u64>().unwrap() > CAPACITY{
+                    return;
+                }else{
+                    let uploaded_file = read_uploaded_file(rd).await;
 
-                //TODO: check size
-                let mut buf = [0u8; 1];
-            
-                let mut file_content = "".to_string();
-                loop {
-                    //let mut file_content = file_content.clone();
-                    match rd.read(&mut buf).await{
-                        Ok(0) => break,
-                        Ok(_n) =>{
-                            let text = String::from_utf8(buf.to_vec()).unwrap();
-                            file_content.push_str(&text);
-                            },
-                        Err(e) => println!("{}",e)
-                    };
-                }  
-    
-                let new_file = StoredFile{
-                    hash: "hash".to_string(),
-                    content: file_content
-                };
-    
-                let mut db = db.lock().unwrap();
-                db.stored_files.push(new_file);
-    
-                let serialized = serde_json::to_string_pretty(&db.stored_files).unwrap();
-                std::fs::write("./stored_files.json", serialized).unwrap(); 
+                    let mut db = db.lock().unwrap();
+                    db.stored_files.push(uploaded_file);
+
+                    let serialized = serde_json::to_string_pretty(&db.stored_files).unwrap();
+                    std::fs::write("./stored_files.json", serialized).unwrap(); 
+                }
             }
 
+            //DOWNLOAD
             else {
+                println!("download...");
                 let hash = parts[1].to_string();
-                let serialized = std::fs::read_to_string("./stored_files.json").unwrap();
-                let mut stored_files = Vec::<StoredFile>::new();
-                if !serialized.is_empty(){
-                    stored_files = serde_json::from_str::<Vec<StoredFile>>(&serialized).unwrap();
+                
+                let downloaded_file: Result<StoredFile, String>;
+                {
+                    let mut db = db.lock().unwrap();
+                    downloaded_file = if db.stored_files.iter().any(|elem| elem.hash.eq(&hash)){
+                        let n = db.stored_files.iter().position(|elem| elem.hash.eq(&hash)).unwrap();
+                        Ok(db.stored_files.remove(n))
+         
+                    }else{
+                        Err("hash not found".to_string())
+                    };
+    
+                    let serialized = serde_json::to_string_pretty(&db.stored_files).unwrap();
+                    std::fs::write("./stored_files.json", serialized).unwrap(); 
                 }
 
-                if stored_files.iter().any(|elem| elem.hash.eq(&hash)){
-                    let n = stored_files.iter().position(|elem| elem.hash.eq(&hash)).unwrap();
-                    let file = stored_files.remove(n);
-
-                    wr.write_all(&mut file.content.as_bytes()).await.unwrap();
-                }
-
+                wr.write_all(&mut downloaded_file.unwrap().content.as_bytes()).await.unwrap();
             }
         });
     }
 }
 
 
+async fn read_uploaded_file(mut rd: ReadHalf<'_>) -> StoredFile{
+     let mut buf = [0u8; 1];
+            
+     let mut file_content = "".to_string();
+     loop {
+         match rd.read(&mut buf).await{
+             Ok(0) => break,
+             Ok(_n) =>{
+                 let text = String::from_utf8(buf.to_vec()).unwrap();
+                 file_content.push_str(&text);
+                 },
+             Err(e) => println!("{}",e)
+         };
+     }  
+
+     let new_file = StoredFile{
+         hash: "hash".to_string(),
+         content: file_content
+     };
+     return new_file;
+     
+}
 
 /*
 
