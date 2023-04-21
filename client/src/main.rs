@@ -2,6 +2,7 @@ use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::fs::File;
 use tokio::net::tcp::{WriteHalf, ReadHalf};
 use tokio::net::{TcpStream, TcpListener};
+use tui::text::Text;
 use std::path::Path;
 use std::sync::{Arc, Mutex as std_mutex, MutexGuard};
 use std::{
@@ -55,6 +56,8 @@ const CAPACITY: u64 = 128000000;    //in bytes
 async fn main(){
 
     let mut stdout = std_io::stdout();
+    let stdin = std_io::stdin();
+    let mut user_input = String::new();
     execute!(stdout, EnterAlternateScreen).unwrap();
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -89,7 +92,9 @@ async fn main(){
             //connect_to_server().await.unwrap();
         }
         if let KeyCode::Char('2') = key.code {
-            signup_as_provider().await.unwrap();
+            println!("Insert the port number for TCP connection (8080 suggested):");
+            stdin.read_line(&mut user_input).unwrap();
+            signup_as_provider(user_input).await.unwrap();
             
             run_provider().await.unwrap();
         }
@@ -107,13 +112,13 @@ async fn main(){
 
 
 
-async fn signup_as_provider() -> io::Result<()>{
+async fn signup_as_provider(tcp_port: String) -> io::Result<()>{
     let mut stream = TcpStream::connect(COORDINATOR_IP).await.unwrap();
     let id = rand::thread_rng().gen_range(0..=MAX_PROVIDER_ID).to_string();
-    let ip_addr = local_ip().unwrap().to_string();
+    let ip_addr = local_ip().unwrap().to_string() + ":" + &tcp_port;
     let btc_addr = "tb1qkkgjylluap72wnhz6rf5adxvhpd3wa6u6e0coc".to_string();
     let message = "p ".to_string() + &id + " " + &ip_addr + " " + &btc_addr;
-    println!("{}", message);
+    //println!("{}", message);
 
     stream.write(message.as_bytes()).await?;
     Ok(())
@@ -123,7 +128,6 @@ async fn signup_as_provider() -> io::Result<()>{
 
 
 async fn ask_coordinator(socket: &mut TcpStream, provider_id: String) -> Result<Provider, ()>{
-    //let mut socket = TcpStream::connect("127.0.0.1:8080").await.unwrap();
     let (mut rd, mut wr) = socket.split();
 
     let message = "c ".to_string() + &provider_id;
@@ -155,7 +159,7 @@ async fn ask_coordinator(socket: &mut TcpStream, provider_id: String) -> Result<
 async fn upload_file() -> io::Result<()>{
     let mut socket = TcpStream::connect(COORDINATOR_IP).await.unwrap();
     let provider = ask_coordinator(&mut socket, "n".to_string()).await.unwrap();
-    println!("RESULT: {} {} {}", provider.id, provider.ip_addr, provider.btc_addr);
+    //println!("RESULT: {} {} {}", provider.id, provider.ip_addr, provider.btc_addr);
 
 
     let ip_prov = provider.ip_addr + ":8080";
