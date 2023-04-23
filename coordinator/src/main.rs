@@ -33,7 +33,7 @@ async fn main() -> io::Result<()> {
             println!("Connection opened");
             let (mut rd, wr) = socket.split();
             
-            let mut buf = [0u8; 64];
+            let mut buf = [0u8; 128];
             let n = rd.read(&mut buf).await.unwrap();
             if n == 0 {
                 println!("Errore in lettura");

@@ -3,7 +3,8 @@ use tokio::fs::File;
 use tokio::net::tcp::{WriteHalf, ReadHalf};
 use tokio::net::{TcpStream, TcpListener};
 use tui::text::Text;
-use std::path::Path;
+use std::io::BufReader;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as std_mutex, MutexGuard};
 use std::{
     io as std_io, str, fs
@@ -22,6 +23,7 @@ use local_ip_address::local_ip;
 use rand::{prelude::*, Error};
 use serde_derive::{Deserialize, Serialize};
 use sha256::digest;
+#[macro_use] extern crate text_io;
 
 
 
@@ -79,10 +81,16 @@ async fn main(){
                         println!("balance");
                     }
                     if let KeyCode::Char('u') = key.code {
-                        upload_file().await.unwrap();
+                        println!("Insert the file path:");
+                        let user_input: String = read!("{}\n");
+                        upload_file(user_input).await.unwrap();
                     }
                     if let KeyCode::Char('d') = key.code {
-                        download_file("file.txt".to_string()).await;
+                        println!("Insert the file name:");
+                        let filename: String = read!("{}\n");
+                        println!("Insert the directory where you want to save the file (must terminate with /):");
+                        let directory: String = read!("{}\n");
+                        download_file(filename, directory).await;
                     }
                     if let KeyCode::Char('q') = key.code {
                         return;
@@ -156,22 +164,31 @@ async fn ask_coordinator(socket: &mut TcpStream, provider_id: String) -> Result<
 
 
 
-async fn upload_file() -> io::Result<()>{
+async fn upload_file(file_path: String) -> Result<(), String>{
+    let file_path = Path::new(&file_path);
+    let file_name = file_path.file_name().unwrap().to_str().unwrap();
+    let file_size = file_path.metadata().unwrap().len();
+
+
+    let serialized = std::fs::read_to_string("./my_files.json").unwrap();
+    let mut my_files = Vec::<FileInfo>::new();
+    if !serialized.is_empty(){
+        my_files = serde_json::from_str::<Vec<FileInfo>>(&serialized).unwrap();
+    }
+    if my_files.iter().any(|elem| elem.name.eq(file_name)){
+        return Err("File with this name already exists. Change file name".to_string());
+    }
+    
+ 
     let mut socket = TcpStream::connect(COORDINATOR_IP).await.unwrap();
     let provider = ask_coordinator(&mut socket, "n".to_string()).await.unwrap();
     //println!("RESULT: {} {} {}", provider.id, provider.ip_addr, provider.btc_addr);
 
 
-    let ip_prov = provider.ip_addr + ":8080";
+    let ip_prov = provider.ip_addr;
     let mut socket = TcpStream::connect(&ip_prov).await.unwrap();
     let (mut rd, mut wr) = socket.split();
 
-    let path = Path::new("./file.txt");
-    let filename = path.file_name().unwrap().to_str().unwrap();
-    let file_size = fs::metadata(path).unwrap().len();
-    //TODO: check name not already existing
-    
-    let mut f = File::open(path).await?;
     let mut buf = [0u8; 64];
 
     let message = "u ".to_string() + &file_size.to_string();
@@ -189,23 +206,20 @@ async fn upload_file() -> io::Result<()>{
     
     // //TODO: encrypt file
     
-
+    let mut f = File::open(&file_path).await.unwrap();
     let mut buf = Vec::new();
-    f.read_to_end(&mut buf).await?;
+    f.read_to_end(&mut buf).await.unwrap();
+    
     let hash = digest(buf.as_slice());
-    wr.write_all(&mut buf).await?;
-
     
-    let text = std::fs::read_to_string("./my_files.json").unwrap();
+    wr.write_all(&mut buf).await.unwrap();
+   
     
-    let mut my_files = Vec::<FileInfo>::new();
-    if !text.is_empty(){
-        my_files = serde_json::from_str::<Vec<FileInfo>>(&text).unwrap();
-    }
+    
  
     let new_file = FileInfo{
         hash: hash,
-        name: filename.to_string(),
+        name: file_name.to_string(),
         provider_id: provider.id.to_string()
     };
     my_files.push(new_file);
@@ -217,7 +231,7 @@ async fn upload_file() -> io::Result<()>{
 }
 
 
-async fn download_file(filename: String){
+async fn download_file(filename: String, directory: String){
     let text = std::fs::read_to_string("./my_files.json").unwrap();
     let mut my_files = Vec::<FileInfo>::new();
     if !text.is_empty(){
@@ -232,10 +246,9 @@ async fn download_file(filename: String){
         
         let mut socket = TcpStream::connect(COORDINATOR_IP).await.unwrap();
         let provider = ask_coordinator(&mut socket, file.provider_id).await.unwrap();
-        println!("RESULT: {} {} {}", provider.id, provider.ip_addr, provider.btc_addr);
+        //println!("RESULT: {} {} {}", provider.id, provider.ip_addr, provider.btc_addr);
 
-        let ip_prov = provider.ip_addr + ":8080";
-        let mut socket = TcpStream::connect(&ip_prov).await.unwrap();
+        let mut socket = TcpStream::connect(&provider.ip_addr).await.unwrap();
         let (mut rd, mut wr) = socket.split();
 
         let message = "d ".to_string() + &file.hash;
@@ -255,18 +268,14 @@ async fn download_file(filename: String){
             }
         }
 
-        println!("{}",file.hash);
-        println!("{}",digest(file_content.as_str()));
         if digest(file_content.as_str()).eq(&file.hash){
+            let filepath = directory + &filename;
+            let mut file = File::create(filepath).await.unwrap();
+            file.write(file_content.as_bytes()).await.unwrap();
             println!("download completed");
         }else{
             println!("file hash not correct");
         }
-        
-    
-        let filepath = "/Users/lorenzobottelli/Desktop/".to_string() + &filename;
-        let mut file = File::create(filepath).await.unwrap();
-        file.write(file_content.as_bytes()).await.unwrap();
     }
 }
 
