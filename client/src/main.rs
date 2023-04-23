@@ -178,6 +178,8 @@ async fn upload_file(file_path: String) -> Result<(), String>{
     if my_files.iter().any(|elem| elem.name.eq(file_name)){
         return Err("File with this name already exists. Change file name".to_string());
     }
+
+    
     
  
     let mut socket = TcpStream::connect(COORDINATOR_IP).await.unwrap();
@@ -189,11 +191,11 @@ async fn upload_file(file_path: String) -> Result<(), String>{
     let mut socket = TcpStream::connect(&ip_prov).await.unwrap();
     let (mut rd, mut wr) = socket.split();
 
-    let mut buf = [0u8; 64];
 
-    let message = "u ".to_string() + &file_size.to_string();
+    let message = "u ".to_string() + &file_size.to_string() + " " + &file_name;
     wr.write(message.as_bytes()).await.unwrap();
 
+    let mut buf = [0u8; 64];
     let n = rd.read(&mut buf).await.unwrap();
     if n == 0{
         println!("Errore in lettura");
@@ -205,20 +207,16 @@ async fn upload_file(file_path: String) -> Result<(), String>{
    
     
     // //TODO: encrypt file
-    
     let mut f = File::open(&file_path).await.unwrap();
-    let mut buf = Vec::new();
-    f.read_to_end(&mut buf).await.unwrap();
+    let mut file_buf = Vec::new();
+    let n = f.read_to_end(&mut file_buf).await.unwrap();
     
-    let hash = digest(buf.as_slice());
-    
-    wr.write_all(&mut buf).await.unwrap();
-   
-    
-    
+    let file_hash = digest(file_name.to_string() + &String::from_utf8_lossy(&file_buf[..n]));
+
+    wr.write_all(&mut file_buf).await.unwrap();
  
     let new_file = FileInfo{
-        hash: hash,
+        hash: file_hash,
         name: file_name.to_string(),
         provider_id: provider.id.to_string()
     };
@@ -267,15 +265,17 @@ async fn download_file(filename: String, directory: String){
                 Err(e) => println!("{}", e)
             }
         }
-
-        if digest(file_content.as_str()).eq(&file.hash){
+      
+        if digest(format!("{}{}", filename, file_content)).eq(&file.hash){
             let filepath = directory + &filename;
             let mut file = File::create(filepath).await.unwrap();
             file.write(file_content.as_bytes()).await.unwrap();
             println!("download completed");
         }else{
-            println!("file hash not correct");
+            println!("could not complete download");
         }
+    }else{
+        println!("File does not exist");
     }
 }
 
@@ -310,7 +310,7 @@ async fn run_provider() -> io::Result<()>{
                     wr.write("file exceeds storage capacity limit".as_bytes()).await.unwrap();
                 }else{
                     wr.write("file uploaded".as_bytes()).await.unwrap();
-                    let uploaded_file = read_uploaded_file(rd).await;
+                    let uploaded_file = read_uploaded_file(rd, parts[2].to_string()).await;
 
                     let mut db = db.lock().unwrap();
                     db.stored_files.push(uploaded_file);
@@ -355,7 +355,7 @@ async fn run_provider() -> io::Result<()>{
 }
 
 
-async fn read_uploaded_file(mut rd: ReadHalf<'_>) -> StoredFile{
+async fn read_uploaded_file(mut rd: ReadHalf<'_>, filename: String) -> StoredFile{
      let mut buf = [0u8; 1];
             
      let mut file_content = "".to_string();
@@ -371,7 +371,7 @@ async fn read_uploaded_file(mut rd: ReadHalf<'_>) -> StoredFile{
      }  
 
      let new_file = StoredFile{
-         hash: digest(file_content.as_str()),
+         hash: digest(filename + file_content.as_str()),
          content: file_content
      };
      return new_file;
