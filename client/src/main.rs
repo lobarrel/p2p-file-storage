@@ -1,15 +1,16 @@
+use chacha20poly1305::{
+    aead::{stream, Aead, NewAead},
+    XChaCha20Poly1305,
+};
 use rand::distributions::Alphanumeric;
-use rand::rngs::OsRng;
+use securestore::{SecretsManager, KeySource};
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::fs::File;
 use tokio::net::tcp::{WriteHalf, ReadHalf};
 use tokio::net::{TcpStream, TcpListener};
-use tui::text::Text;
-use std::io::BufReader;
-use std::path::{Path, PathBuf};
+use std::{path::{Path, PathBuf}, hash};
 use std::process::Command;
 use std::sync::{Arc, Mutex as std_mutex, MutexGuard};
-use std::time::Duration;
 use std::{
     io as std_io, str, fs, thread
 };
@@ -46,7 +47,7 @@ struct FileInfo{
 #[derive(Deserialize, Serialize, Debug)]
 struct StoredFile{
     hash: String,
-    content: String
+    content: Vec<u8>
 }
 
 struct StoredFiles{
@@ -81,8 +82,6 @@ async fn main(){
             println!("{}", format!("Wallet successfully created!").green());
             println!("\nCommands:\na: show your Bitcoin address\nb: show your wallet balance\nu: upload a new file\nd: download a file\nq: quit");
         
-            //println!("{}", format!("Your secret key is: {}", String::from_utf8_lossy(&key)).green());
-            
             loop{
                 if let Event::Key(key) = event::read().unwrap(){
                     if let KeyCode::Char('a') = key.code {
@@ -175,8 +174,9 @@ async fn ask_coordinator(socket: &mut TcpStream, provider_id: String) -> Result<
 
 
 
-async fn upload_file(file_path: String) -> Result<(), String>{
-    let file_path = Path::new(&file_path);
+async fn upload_file(filepath: String) -> Result<(), String>{
+    
+    let file_path = Path::new(&filepath);
     let file_name = file_path.file_name().unwrap().to_str().unwrap();
     let file_size = file_path.metadata().unwrap().len();
 
@@ -190,9 +190,6 @@ async fn upload_file(file_path: String) -> Result<(), String>{
         return Err("File with this name already exists. Change file name".to_string());
     }
 
-    
-    
- 
     let mut socket = TcpStream::connect(COORDINATOR_IP).await.unwrap();
     let provider = ask_coordinator(&mut socket, "n".to_string()).await.unwrap();
     //println!("RESULT: {} {} {}", provider.id, provider.ip_addr, provider.btc_addr);
@@ -218,13 +215,18 @@ async fn upload_file(file_path: String) -> Result<(), String>{
    
     
     // //TODO: encrypt file
-    let mut f = File::open(&file_path).await.unwrap();
-    let mut file_buf = Vec::new();
-    let n = f.read_to_end(&mut file_buf).await.unwrap();
     
-    let file_hash = digest(file_name.to_string() + &String::from_utf8_lossy(&file_buf[..n]));
-
-    wr.write_all(&mut file_buf).await.unwrap();
+    // let mut f = File::open(&file_path).await.unwrap();
+    // let mut file_buf = Vec::new();
+    // let n = f.read_to_end(&mut file_buf).await.unwrap();
+    let encrypted_data = encrypt_file(&filepath);
+    println!("{:?}", encrypted_data);
+    wr.write(encrypted_data.as_slice()).await.unwrap();
+    let hash1 = digest(file_name);
+    let hash2 = digest(&*encrypted_data);
+    let file_hash = digest(hash1 + &hash2);
+    
+   //wr.write_all(&mut file_buf).await.unwrap();
  
     let new_file = FileInfo{
         hash: file_hash,
@@ -235,12 +237,14 @@ async fn upload_file(file_path: String) -> Result<(), String>{
     
     let serialized = serde_json::to_string_pretty(&my_files).unwrap();
     std::fs::write("./my_files.json", serialized).unwrap(); 
+    println!("file uploaded!");
 
     Ok(())
 }
 
 
 async fn download_file(filename: String, directory: String){
+    let filepath = directory + &filename;
     let text = std::fs::read_to_string("./my_files.json").unwrap();
     let mut my_files = Vec::<FileInfo>::new();
     if !text.is_empty(){
@@ -264,23 +268,25 @@ async fn download_file(filename: String, directory: String){
         wr.write(message.as_bytes()).await.unwrap();
 
         let mut buf = [0u8; 1];
-        let mut file_content = "".to_string();
+        let mut file_content = Vec::<u8>::new();
                 
         loop{
             match rd.read(&mut buf).await {
                 Ok(0) => break,
                 Ok(_n) => {
-                    let text = String::from_utf8(buf.to_vec()).unwrap();
-                    file_content.push_str(&text);
+                    //let text = String::from_utf8(buf.to_vec()).unwrap();
+                    file_content.push(buf[0]);
                 },
                 Err(e) => println!("{}", e)
             }
         }
       
-        if digest(format!("{}{}", filename, file_content)).eq(&file.hash){
-            let filepath = directory + &filename;
+        let hash1 = digest(filename);
+        let hash2 = digest(&*file_content);
+        if digest(hash1 + &hash2).eq(&file.hash){    
             let mut file = File::create(filepath).await.unwrap();
-            file.write(file_content.as_bytes()).await.unwrap();
+            let decrypted_data = decrypt_file(file_content);
+            file.write(&decrypted_data).await.unwrap();
             println!("download completed");
         }else{
             println!("could not complete download");
@@ -320,7 +326,7 @@ async fn run_provider() -> io::Result<()>{
                 if parts[1].parse::<u64>().unwrap() > CAPACITY{
                     wr.write("file exceeds storage capacity limit".as_bytes()).await.unwrap();
                 }else{
-                    wr.write("file uploaded".as_bytes()).await.unwrap();
+                    wr.write("uploading file...".as_bytes()).await.unwrap();
                     let uploaded_file = read_uploaded_file(rd, parts[2].to_string()).await;
 
                     let mut db = db.lock().unwrap();
@@ -353,7 +359,7 @@ async fn run_provider() -> io::Result<()>{
                 }
 
                 match downloaded_file{
-                    Ok(file) => wr.write_all(&mut file.content.as_bytes()).await.unwrap(),
+                    Ok(file) => wr.write_all(&file.content).await.unwrap(),
                     Err(e) => {
                         wr.write(e.as_bytes()).await.unwrap();
                     }
@@ -369,31 +375,57 @@ async fn run_provider() -> io::Result<()>{
 async fn read_uploaded_file(mut rd: ReadHalf<'_>, filename: String) -> StoredFile{
      let mut buf = [0u8; 1];
             
-     let mut file_content = "".to_string();
+     let mut file_content = Vec::<u8>::new();
      loop {
          match rd.read(&mut buf).await{
              Ok(0) => break,
              Ok(_n) =>{
-                 let text = String::from_utf8(buf.to_vec()).unwrap();
-                 file_content.push_str(&text);
+                 //let text = String::from_utf8(buf.to_vec()).unwrap();
+                 file_content.push(buf[0]);
                  },
              Err(e) => println!("{}",e)
          };
      }  
 
+     let hash1 = digest(filename);
+     let hash2 = digest(&*file_content);
+
      let new_file = StoredFile{
-         hash: digest(filename + file_content.as_str()),
+         hash: digest(hash1 + &hash2),
          content: file_content
      };
      return new_file;
      
 }
 
+fn encrypt_file(filepath: &str) -> Vec<u8>{
+    let sec_man = SecretsManager::load("secrets.json", KeySource::File("secrets.key")).unwrap();
+    let key = sec_man.get("encryption_key").unwrap();
+    let nonce = sec_man.get("nonce").unwrap();
+    let cipher = XChaCha20Poly1305::new(key.as_bytes().into());
+
+    let file_data = fs::read(filepath).unwrap();
+    let encrypted_data = cipher
+        .encrypt(nonce.as_bytes().into(), file_data.as_ref()).unwrap();
+
+    return encrypted_data;
+}
+
+fn decrypt_file(file_data: Vec<u8>) -> Vec<u8>{
+    let sec_man = SecretsManager::load("secrets.json", KeySource::File("secrets.key")).unwrap();
+    let key = sec_man.get("encryption_key").unwrap();
+    let nonce = sec_man.get("nonce").unwrap();
+    let cipher = XChaCha20Poly1305::new(key.as_bytes().into());
+
+    let decrypted_data = cipher
+        .decrypt(nonce.as_bytes().into(), file_data.as_ref()).unwrap();
+    
+    return decrypted_data;
+}
 
 fn store_encryption_key(){
     let key: String = thread_rng().sample_iter(&Alphanumeric).take(32).map(char::from).collect();
-    let mut nonce = [0u8; 24];
-    OsRng.fill_bytes(&mut nonce);
+    let nonce: String = thread_rng().sample_iter(&Alphanumeric).take(24).map(char::from).collect();
     println!("Your encryption key is being generated. Please create a password to complete the operation");
 
     Command::new("ssclient")
@@ -401,6 +433,9 @@ fn store_encryption_key(){
         .spawn().expect("failed to generate encryption key").wait().unwrap();
     Command::new("ssclient")
         .arg("-k").arg("secrets.key").arg("set").arg("encryption_key").arg(key)
+        .spawn().expect("failed to generate encryption key").wait().unwrap();
+    Command::new("ssclient")
+        .arg("-k").arg("secrets.key").arg("set").arg("nonce").arg(nonce)
         .spawn().expect("failed to generate encryption key").wait().unwrap();
 
     println!("{}", format!("Your encryption key has been saved").green());
