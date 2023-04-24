@@ -1,3 +1,5 @@
+use rand::distributions::Alphanumeric;
+use rand::rngs::OsRng;
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::fs::File;
 use tokio::net::tcp::{WriteHalf, ReadHalf};
@@ -5,9 +7,11 @@ use tokio::net::{TcpStream, TcpListener};
 use tui::text::Text;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::{Arc, Mutex as std_mutex, MutexGuard};
+use std::time::Duration;
 use std::{
-    io as std_io, str, fs
+    io as std_io, str, fs, thread
 };
 use tui::{
     backend::{CrosstermBackend},
@@ -69,9 +73,16 @@ async fn main(){
 
     if let Event::Key(key) = event::read().unwrap(){
         if let KeyCode::Char('1') = key.code {
+            if !Path::new("./secrets.key").exists(){
+                store_encryption_key();
+            }
+        
             println!("Creating your Bitcoin wallet...");
             println!("{}", format!("Wallet successfully created!").green());
             println!("\nCommands:\na: show your Bitcoin address\nb: show your wallet balance\nu: upload a new file\nd: download a file\nq: quit");
+        
+            //println!("{}", format!("Your secret key is: {}", String::from_utf8_lossy(&key)).green());
+            
             loop{
                 if let Event::Key(key) = event::read().unwrap(){
                     if let KeyCode::Char('a') = key.code {
@@ -378,6 +389,22 @@ async fn read_uploaded_file(mut rd: ReadHalf<'_>, filename: String) -> StoredFil
      
 }
 
+
+fn store_encryption_key(){
+    let key: String = thread_rng().sample_iter(&Alphanumeric).take(32).map(char::from).collect();
+    let mut nonce = [0u8; 24];
+    OsRng.fill_bytes(&mut nonce);
+    println!("Your encryption key is being generated. Please create a password to complete the operation");
+
+    Command::new("ssclient")
+        .arg("create").arg("secrets.json").arg("--export-key").arg("secrets.key")
+        .spawn().expect("failed to generate encryption key").wait().unwrap();
+    Command::new("ssclient")
+        .arg("-k").arg("secrets.key").arg("set").arg("encryption_key").arg(key)
+        .spawn().expect("failed to generate encryption key").wait().unwrap();
+
+    println!("{}", format!("Your encryption key has been saved").green());
+}
 /*
 
 signup_as_provider:  client(P)    p [id][ip][btc]       coordinator -> save provider.json
