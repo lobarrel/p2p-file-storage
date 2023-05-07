@@ -24,7 +24,7 @@ async fn main() -> io::Result<()> {
 
     let listener = TcpListener::bind("localhost:8080").await.unwrap();
     let db = Arc::new(std_mutex::new(Providers{providers: Vec::new()}));
-
+    
     loop{
         let (mut socket, _) = listener.accept().await.unwrap();
         let db = db.clone();

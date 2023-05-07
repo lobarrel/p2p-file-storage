@@ -1,3 +1,4 @@
+use bdk::{Wallet, blockchain::ElectrumBlockchain, sled::Tree};
 use chacha20poly1305::{
     aead::{stream, Aead, NewAead},
     XChaCha20Poly1305,
@@ -30,7 +31,8 @@ use serde_derive::{Deserialize, Serialize};
 use sha256::digest;
 #[macro_use] extern crate text_io;
 
-
+mod bdkwallet;
+use bdkwallet::*;
 
 struct Provider{
     id: String,
@@ -58,6 +60,7 @@ struct StoredFiles{
 const COORDINATOR_IP: &str = "localhost:8080";
 const MAX_PROVIDER_ID: u16 = 65535;
 const CAPACITY: u64 = 128000000;    //in bytes
+const SATS_X_KB: u64 = 100;
 
 #[tokio::main]
 async fn main(){
@@ -79,21 +82,22 @@ async fn main(){
             }
         
             println!("Creating your Bitcoin wallet...");
+            let wallet = new_wallet().unwrap();
             println!("{}", format!("Wallet successfully created!").green());
             println!("\nCommands:\na: show your Bitcoin address\nb: show your wallet balance\nu: upload a new file\nd: download a file\nq: quit");
         
             loop{
                 if let Event::Key(key) = event::read().unwrap(){
                     if let KeyCode::Char('a') = key.code {
-                        println!("address");
+                        println!("Address: {}", get_wallet_address(&wallet));
                     }
                     if let KeyCode::Char('b') = key.code {
-                        println!("balance");
+                        println!("Balance: {}", get_wallet_balance(&wallet));
                     }
                     if let KeyCode::Char('u') = key.code {
                         println!("Insert the file path:");
                         let user_input: String = read!("{}\n");
-                        upload_file(user_input).await.unwrap();
+                        upload_file(user_input, &wallet).await.unwrap();
                     }
                     if let KeyCode::Char('d') = key.code {
                         println!("Insert the file name:");
@@ -110,9 +114,13 @@ async fn main(){
             //connect_to_server().await.unwrap();
         }
         if let KeyCode::Char('2') = key.code {
+            println!("Creating your Bitcoin wallet...");
+            let wallet = new_wallet().unwrap();
+            println!("{}", format!("Wallet successfully created!").green());
+
             println!("Insert the port number for TCP connection (8080 suggested):");
             stdin.read_line(&mut user_input).unwrap();
-            signup_as_provider(user_input).await.unwrap();
+            signup_as_provider(user_input, &wallet).await.unwrap();
             
             run_provider().await.unwrap();
         }
@@ -130,11 +138,11 @@ async fn main(){
 
 
 
-async fn signup_as_provider(tcp_port: String) -> io::Result<()>{
+async fn signup_as_provider(tcp_port: String, wallet: &Wallet<ElectrumBlockchain, Tree>) -> io::Result<()>{
     let mut stream = TcpStream::connect(COORDINATOR_IP).await.unwrap();
     let id = rand::thread_rng().gen_range(0..=MAX_PROVIDER_ID).to_string();
     let ip_addr = local_ip().unwrap().to_string() + ":" + &tcp_port;
-    let btc_addr = "tb1qkkgjylluap72wnhz6rf5adxvhpd3wa6u6e0coc".to_string();
+    let btc_addr = get_wallet_address(wallet).to_string();
     let message = "p ".to_string() + &id + " " + &ip_addr + " " + &btc_addr;
     //println!("{}", message);
 
@@ -174,12 +182,13 @@ async fn ask_coordinator(socket: &mut TcpStream, provider_id: String) -> Result<
 
 
 
-async fn upload_file(filepath: String) -> Result<(), String>{
+async fn upload_file(filepath: String, wallet: &Wallet<ElectrumBlockchain, Tree>) -> Result<(), String>{
     
     let file_path = Path::new(&filepath);
     let file_name = file_path.file_name().unwrap().to_str().unwrap();
     let file_size = file_path.metadata().unwrap().len();
 
+    let amount = file_size/1000*SATS_X_KB;
 
     let serialized = std::fs::read_to_string("./my_files.json").unwrap();
     let mut my_files = Vec::<FileInfo>::new();
@@ -211,34 +220,35 @@ async fn upload_file(filepath: String) -> Result<(), String>{
     else{
         let message = str::from_utf8(&buf[..n]).unwrap();
         println!("{}", message);
-    }
-   
-    
-    // //TODO: encrypt file
-    
-    // let mut f = File::open(&file_path).await.unwrap();
-    // let mut file_buf = Vec::new();
-    // let n = f.read_to_end(&mut file_buf).await.unwrap();
-    let encrypted_data = encrypt_file(&filepath);
-    println!("{:?}", encrypted_data);
-    wr.write(encrypted_data.as_slice()).await.unwrap();
-    let hash1 = digest(file_name);
-    let hash2 = digest(&*encrypted_data);
-    let file_hash = digest(hash1 + &hash2);
-    
-   //wr.write_all(&mut file_buf).await.unwrap();
- 
-    let new_file = FileInfo{
-        hash: file_hash,
-        name: file_name.to_string(),
-        provider_id: provider.id.to_string()
-    };
-    my_files.push(new_file);
-    
-    let serialized = serde_json::to_string_pretty(&my_files).unwrap();
-    std::fs::write("./my_files.json", serialized).unwrap(); 
-    println!("file uploaded!");
+        let parts: Vec<&str> = message.split_ascii_whitespace().collect();
+        if !parts[0].eq("err:"){
 
+            //ENCRYPT AND SEND FILE
+            let encrypted_data = encrypt_file(&filepath);
+            println!("{:?}", encrypted_data);
+            wr.write(encrypted_data.as_slice()).await.unwrap();
+            let hash1 = digest(file_name);
+            let hash2 = digest(&*encrypted_data);
+            let file_hash = digest(hash1 + &hash2);
+        
+            //ADD FILE INFO
+            let new_file = FileInfo{
+                hash: file_hash,
+                name: file_name.to_string(),
+                provider_id: provider.id.to_string()
+            };
+            my_files.push(new_file);
+            
+            let serialized = serde_json::to_string_pretty(&my_files).unwrap();
+            std::fs::write("./my_files.json", serialized).unwrap(); 
+
+            //SEND TRANSACTION
+            println!("Sending {} sats to storage provider...", amount);
+            new_transaction(wallet, provider.btc_addr, amount).unwrap();
+            println!("{}", format!("Transaction completed").green()); 
+            println!("{}", format!("File uploaded").green()); 
+        }
+    }
     Ok(())
 }
 
@@ -324,7 +334,7 @@ async fn run_provider() -> io::Result<()>{
             if parts[0].eq("u"){
                 //TODO check size
                 if parts[1].parse::<u64>().unwrap() > CAPACITY{
-                    wr.write("file exceeds storage capacity limit".as_bytes()).await.unwrap();
+                    wr.write("error: file exceeds storage capacity limit".as_bytes()).await.unwrap();
                 }else{
                     wr.write("uploading file...".as_bytes()).await.unwrap();
                     let uploaded_file = read_uploaded_file(rd, parts[2].to_string()).await;
