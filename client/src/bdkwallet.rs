@@ -38,7 +38,7 @@ use std::{
 };
 
  
-fn get_descriptors() -> (String, String) {
+pub fn get_descriptors() -> (String, String) {
     // Create a new secp context
     let secp = Secp256k1::new();
         
@@ -80,13 +80,10 @@ fn get_descriptors() -> (String, String) {
 
 
 
-pub fn new_wallet() -> Result<Wallet<ElectrumBlockchain, Tree>, Error> {
+pub fn new_wallet(db_path: &str, receive_desc: String, change_desc: String) -> Result<Wallet<ElectrumBlockchain, Tree>, Error> {
     //Electrum client
     let client = Client::new("ssl://electrum.blockstream.info:60002").expect("Connection to Electrum client failed");
     let blockchain = ElectrumBlockchain::from(client);
-
-    //Get descriptors
-    let (receive_desc, change_desc) = get_descriptors();
 
     // Use deterministic wallet name derived from descriptor
     let wallet_name = wallet_name_from_descriptor(
@@ -98,7 +95,7 @@ pub fn new_wallet() -> Result<Wallet<ElectrumBlockchain, Tree>, Error> {
 
     //Create datadir
     let mut datadir = dirs_next::home_dir().expect("Home directory not found"); 
-    datadir.push(".bdk-example");
+    datadir.push(db_path);
     let database = sled::open(datadir).unwrap();
     let db_tree = database.open_tree(wallet_name.clone()).unwrap();
 
@@ -112,6 +109,7 @@ pub fn new_wallet() -> Result<Wallet<ElectrumBlockchain, Tree>, Error> {
     
     Ok(wallet) 
 }
+
 
 
 pub fn get_wallet_address(wallet: &Wallet<ElectrumBlockchain, Tree>) -> Address{

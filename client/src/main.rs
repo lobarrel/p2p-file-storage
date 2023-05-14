@@ -76,14 +76,23 @@ async fn main(){
     println!("Press '1' if you want to upload your files on the P2P storage service\nPress '2' if you want to provide storage space and earn commissions\nPress 'q' to quit\n");
 
     if let Event::Key(key) = event::read().unwrap(){
-        if let KeyCode::Char('1') = key.code {
-            if !Path::new("./secrets.key").exists(){
-                store_encryption_key();
-            }
-        
+
+        let wallet: Wallet<ElectrumBlockchain, Tree>;
+        if !Path::new("./secrets.key").exists(){
+            store_encryption_key();
             println!("Creating your Bitcoin wallet...");
-            let wallet = new_wallet().unwrap();
+            let (receive_desc, change_desc) = get_descriptors();
+            store_descriptors(&receive_desc, &change_desc);
+            wallet = new_wallet(".db-user", receive_desc, change_desc).unwrap();
             println!("{}", format!("Wallet successfully created!").green());
+        }else{
+            let sec_man = SecretsManager::load("secrets.json", KeySource::File("secrets.key")).unwrap();
+            let receive_desc = sec_man.get("receive_desc").unwrap();
+            let change_desc = sec_man.get("change_desc").unwrap();
+            wallet = new_wallet(".db-user", receive_desc, change_desc).unwrap();
+        }
+
+        if let KeyCode::Char('1') = key.code {
             println!("\nCommands:\na: show your Bitcoin address\nb: show your wallet balance\nu: upload a new file\nd: download a file\nq: quit");
         
             loop{
@@ -97,7 +106,10 @@ async fn main(){
                     if let KeyCode::Char('u') = key.code {
                         println!("Insert the file path:");
                         let user_input: String = read!("{}\n");
-                        upload_file(user_input, &wallet).await.unwrap();
+                        match upload_file(user_input, &wallet).await{
+                            Ok(()) => println!("{}", format!("File uploaded").green()),
+                            Err(e) => println!("{}", e)
+                        };
                     }
                     if let KeyCode::Char('d') = key.code {
                         println!("Insert the file name:");
@@ -114,9 +126,6 @@ async fn main(){
             //connect_to_server().await.unwrap();
         }
         if let KeyCode::Char('2') = key.code {
-            println!("Creating your Bitcoin wallet...");
-            let wallet = new_wallet().unwrap();
-            println!("{}", format!("Wallet successfully created!").green());
 
             println!("Insert the port number for TCP connection (8080 suggested):");
             stdin.read_line(&mut user_input).unwrap();
@@ -188,7 +197,8 @@ async fn upload_file(filepath: String, wallet: &Wallet<ElectrumBlockchain, Tree>
     let file_name = file_path.file_name().unwrap().to_str().unwrap();
     let file_size = file_path.metadata().unwrap().len();
 
-    let amount = file_size/1000*SATS_X_KB;
+    println!("{}", file_size);
+    let amount = file_size * SATS_X_KB;
 
     let serialized = std::fs::read_to_string("./my_files.json").unwrap();
     let mut my_files = Vec::<FileInfo>::new();
@@ -223,30 +233,32 @@ async fn upload_file(filepath: String, wallet: &Wallet<ElectrumBlockchain, Tree>
         let parts: Vec<&str> = message.split_ascii_whitespace().collect();
         if !parts[0].eq("err:"){
 
-            //ENCRYPT AND SEND FILE
-            let encrypted_data = encrypt_file(&filepath);
-            println!("{:?}", encrypted_data);
-            wr.write(encrypted_data.as_slice()).await.unwrap();
-            let hash1 = digest(file_name);
-            let hash2 = digest(&*encrypted_data);
-            let file_hash = digest(hash1 + &hash2);
-        
-            //ADD FILE INFO
-            let new_file = FileInfo{
-                hash: file_hash,
-                name: file_name.to_string(),
-                provider_id: provider.id.to_string()
-            };
-            my_files.push(new_file);
-            
-            let serialized = serde_json::to_string_pretty(&my_files).unwrap();
-            std::fs::write("./my_files.json", serialized).unwrap(); 
-
             //SEND TRANSACTION
             println!("Sending {} sats to storage provider...", amount);
-            new_transaction(wallet, provider.btc_addr, amount).unwrap();
-            println!("{}", format!("Transaction completed").green()); 
-            println!("{}", format!("File uploaded").green()); 
+            match new_transaction(wallet, provider.btc_addr, amount){
+                Ok(()) => {
+                    println!("{}", format!("Transaction completed").green());
+
+                    //ENCRYPT AND SEND FILE
+                    let encrypted_data = encrypt_file(&filepath);
+                    wr.write(encrypted_data.as_slice()).await.unwrap();
+                    let hash1 = digest(file_name);
+                    let hash2 = digest(&*encrypted_data);
+                    let file_hash = digest(hash1 + &hash2);
+
+                    //ADD FILE INFO
+                    let new_file = FileInfo{
+                        hash: file_hash,
+                        name: file_name.to_string(),
+                        provider_id: provider.id.to_string()
+                    };
+                    my_files.push(new_file);
+
+                    let serialized = serde_json::to_string_pretty(&my_files).unwrap();
+                    std::fs::write("./my_files.json", serialized).unwrap(); 
+                },
+                Err(e) => println!("{}", e)
+            };
         }
     }
     Ok(())
@@ -449,6 +461,13 @@ fn store_encryption_key(){
         .spawn().expect("failed to generate encryption key").wait().unwrap();
 
     println!("{}", format!("Your encryption key has been saved").green());
+}
+
+fn store_descriptors(receive_desc: &str, change_desc: &str){
+    Command::new("ssclient").arg("-k").arg("secrets.key").arg("set").arg("receive_desc").arg(receive_desc)
+        .spawn().expect("failed to store wallet keys").wait().unwrap();
+    Command::new("ssclient").arg("-k").arg("secrets.key").arg("set").arg("change_desc").arg(change_desc)
+        .spawn().expect("failed to store wallet keys").wait().unwrap();
 }
 /*
 
