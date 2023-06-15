@@ -1,8 +1,7 @@
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::WriteHalf;
 use tokio::net::{TcpListener};
-use tokio::time::error::Elapsed;
-use std::str::{self, FromStr};
+use std::str::{self};
 use std::sync::{Arc, Mutex as std_mutex, MutexGuard};
 use serde_derive::{Deserialize, Serialize};
 use rand::prelude::*;

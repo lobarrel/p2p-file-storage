@@ -128,8 +128,9 @@ pub fn get_wallet_balance(wallet: &Wallet<ElectrumBlockchain, Tree>) -> Amount{
 
 
 pub fn new_transaction(wallet: &Wallet<ElectrumBlockchain, Tree>, recipient_address: String, amount: u64) -> Result<(), Error>{
-   
+    
     let recipient_address = Address::from_str(&recipient_address.trim()).unwrap();
+    
 
     //Sync wallet
     wallet.sync(NoopProgress, None).unwrap();

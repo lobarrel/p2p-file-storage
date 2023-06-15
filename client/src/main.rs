@@ -77,22 +77,23 @@ async fn main(){
 
     if let Event::Key(key) = event::read().unwrap(){
 
-        let wallet: Wallet<ElectrumBlockchain, Tree>;
-        if !Path::new("./secrets.key").exists(){
-            store_encryption_key();
-            println!("Creating your Bitcoin wallet...");
-            let (receive_desc, change_desc) = get_descriptors();
-            store_descriptors(&receive_desc, &change_desc);
-            wallet = new_wallet(".db-user", receive_desc, change_desc).unwrap();
-            println!("{}", format!("Wallet successfully created!").green());
-        }else{
-            let sec_man = SecretsManager::load("secrets.json", KeySource::File("secrets.key")).unwrap();
-            let receive_desc = sec_man.get("receive_desc").unwrap();
-            let change_desc = sec_man.get("change_desc").unwrap();
-            wallet = new_wallet(".db-user", receive_desc, change_desc).unwrap();
-        }
-
         if let KeyCode::Char('1') = key.code {
+
+            let wallet: Wallet<ElectrumBlockchain, Tree>;
+            if !Path::new("./secrets.key").exists(){
+                store_encryption_key();
+                println!("Creating your Bitcoin wallet...");
+                let (receive_desc, change_desc) = get_descriptors();
+                store_descriptors(&receive_desc, &change_desc);
+                wallet = new_wallet(".db-user", receive_desc, change_desc).unwrap();
+                println!("{}", format!("Wallet successfully created!").green());
+            }else{
+                let sec_man = SecretsManager::load("secrets.json", KeySource::File("secrets.key")).unwrap();
+                let receive_desc = sec_man.get("receive_desc").unwrap();
+                let change_desc = sec_man.get("change_desc").unwrap();
+                wallet = new_wallet(".db-user", receive_desc, change_desc).unwrap();
+            }
+
             println!("\nCommands:\na: show your Bitcoin address\nb: show your wallet balance\nu: upload a new file\nd: download a file\nq: quit");
         
             loop{
@@ -123,9 +124,23 @@ async fn main(){
                     }
                 }
             }
-            //connect_to_server().await.unwrap();
         }
         if let KeyCode::Char('2') = key.code {
+
+            let wallet: Wallet<ElectrumBlockchain, Tree>;
+            if !Path::new("./secrets.key").exists(){
+                store_encryption_key();
+                println!("Creating your Bitcoin wallet...");
+                let (receive_desc, change_desc) = get_descriptors();
+                store_descriptors(&receive_desc, &change_desc);
+                wallet = new_wallet(".db-provider", receive_desc, change_desc).unwrap();
+                println!("{}", format!("Wallet successfully created!").green());
+            }else{
+                let sec_man = SecretsManager::load("secrets.json", KeySource::File("secrets.key")).unwrap();
+                let receive_desc = sec_man.get("receive_desc").unwrap();
+                let change_desc = sec_man.get("change_desc").unwrap();
+                wallet = new_wallet(".db-provider", receive_desc, change_desc).unwrap();
+            }
 
             println!("Insert the port number for TCP connection (8080 suggested):");
             stdin.read_line(&mut user_input).unwrap();
@@ -154,6 +169,7 @@ async fn signup_as_provider(tcp_port: String, wallet: &Wallet<ElectrumBlockchain
     let btc_addr = get_wallet_address(wallet).to_string();
     let message = "p ".to_string() + &id + " " + &ip_addr + " " + &btc_addr;
     //println!("{}", message);
+    println!("{}", format!("Running storage provider.\nBitcoin address: {}", btc_addr).green());
 
     stream.write(message.as_bytes()).await?;
     Ok(())
@@ -168,7 +184,7 @@ async fn ask_coordinator(socket: &mut TcpStream, provider_id: String) -> Result<
     let message = "c ".to_string() + &provider_id;
     wr.write(message.as_bytes()).await.unwrap();
 
-    let mut buf = [0u8; 64];
+    let mut buf = [0u8; 128];
             
    
     let n = rd.read(&mut buf).await.unwrap();
@@ -235,7 +251,7 @@ async fn upload_file(filepath: String, wallet: &Wallet<ElectrumBlockchain, Tree>
 
             //SEND TRANSACTION
             println!("Sending {} sats to storage provider...", amount);
-            match new_transaction(wallet, provider.btc_addr, amount){
+            match new_transaction(wallet, provider.btc_addr.to_string(), amount){
                 Ok(()) => {
                     println!("{}", format!("Transaction completed").green());
 
@@ -257,7 +273,7 @@ async fn upload_file(filepath: String, wallet: &Wallet<ElectrumBlockchain, Tree>
                     let serialized = serde_json::to_string_pretty(&my_files).unwrap();
                     std::fs::write("./my_files.json", serialized).unwrap(); 
                 },
-                Err(e) => println!("{}", e)
+                Err(_e) => println!("Transaction failed")
             };
         }
     }
@@ -296,7 +312,6 @@ async fn download_file(filename: String, directory: String){
             match rd.read(&mut buf).await {
                 Ok(0) => break,
                 Ok(_n) => {
-                    //let text = String::from_utf8(buf.to_vec()).unwrap();
                     file_content.push(buf[0]);
                 },
                 Err(e) => println!("{}", e)
@@ -309,12 +324,12 @@ async fn download_file(filename: String, directory: String){
             let mut file = File::create(filepath).await.unwrap();
             let decrypted_data = decrypt_file(file_content);
             file.write(&decrypted_data).await.unwrap();
-            println!("download completed");
+            println!("{}", format!("Download completed").green());
         }else{
-            println!("could not complete download");
+            println!("{}", format!("Could not complete download").red());
         }
     }else{
-        println!("File does not exist");
+        println!("{}", format!("File does not exist").red());
     }
 }
 
@@ -344,7 +359,6 @@ async fn run_provider() -> io::Result<()>{
 
             //UPLOAD
             if parts[0].eq("u"){
-                //TODO check size
                 if parts[1].parse::<u64>().unwrap() > CAPACITY{
                     wr.write("error: file exceeds storage capacity limit".as_bytes()).await.unwrap();
                 }else{
@@ -402,7 +416,6 @@ async fn read_uploaded_file(mut rd: ReadHalf<'_>, filename: String) -> StoredFil
          match rd.read(&mut buf).await{
              Ok(0) => break,
              Ok(_n) =>{
-                 //let text = String::from_utf8(buf.to_vec()).unwrap();
                  file_content.push(buf[0]);
                  },
              Err(e) => println!("{}",e)
@@ -469,14 +482,3 @@ fn store_descriptors(receive_desc: &str, change_desc: &str){
     Command::new("ssclient").arg("-k").arg("secrets.key").arg("set").arg("change_desc").arg(change_desc)
         .spawn().expect("failed to store wallet keys").wait().unwrap();
 }
-/*
-
-signup_as_provider:  client(P)    p [id][ip][btc]       coordinator -> save provider.json
-
-ask_coordinator:     client(U)    c [id]                coordinator -> return Provider
-
-upload_file:         client(U)    u [size][file]              client(P) -> save stored_files.json
-
-download_file:       client(U)    d [hash]              client(P) -> return file  
-
- */
