@@ -85,8 +85,13 @@ An additional layer of security in order to protect users could be to give the a
 ## Resources
 
 Bitcoin Development Kit: https://github.com/bitcoindevkit  
+
 SecureStore: https://docs.rs/securestore/latest/securestore/
+
 XChaCha20-Poly1305: https://en.wikipedia.org/wiki/ChaCha20-Poly1305
+
 AEAD Encryption: https://en.wikipedia.org/wiki/Authenticated_encryption 
+
 Tokio Framework: https://docs.rs/tokio/latest/tokio/  
+
 SerdeJSON: https://docs.rs/serde_json/latest/serde_json/
