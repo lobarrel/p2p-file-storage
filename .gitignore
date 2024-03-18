@@ -1,2 +1,4 @@
 /target
 /secrets.key
+/.vscode
+/.DS_Store
